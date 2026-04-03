@@ -5,9 +5,10 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="${1:-.}"
-MAX_ITERATIONS="${MAX_ITERATIONS:-50}"
+MAX_ITERATIONS="${MAX_ITERATIONS:-50}"  # 0 = unlimited
 CC_TIMEOUT="${CC_TIMEOUT:-900}"
 REFRESH_INTERVAL="${REFRESH_INTERVAL:-5}"
+DIRECTION="${AUTONOMOUS_DIRECTION:-}"
 
 # Derive SLUG and paths — self-contained, no gstack dependency
 SLUG=$(basename "$(git -C "$PROJECT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$PROJECT_DIR")")
@@ -180,10 +181,18 @@ build_prompt() {
   local task_desc="$1"
   local task_source="$2"
 
+  local direction_line=""
+  if [ -n "$DIRECTION" ]; then
+    direction_line="SESSION DIRECTION: $DIRECTION
+Focus your work on this direction. If the task doesn't align, adapt it to fit.
+
+"
+  fi
+
   cat << PROMPT
 You are an autonomous project agent working on this codebase.
 
-YOUR TASK: $task_desc
+${direction_line}YOUR TASK: $task_desc
 (Source: $task_source)
 
 INSTRUCTIONS:
@@ -212,7 +221,8 @@ RULES:
 echo "═══════════════════════════════════════════════════"
 echo "  Autonomous Skill — Session $SESSION_ID"
 echo "  Project: $PROJECT_DIR"
-echo "  Max iterations: $MAX_ITERATIONS"
+if [ -n "$DIRECTION" ]; then echo "  Direction: $DIRECTION"; fi
+if [ "$MAX_ITERATIONS" -eq 0 ] 2>/dev/null; then echo "  Max iterations: unlimited"; else echo "  Max iterations: $MAX_ITERATIONS"; fi
 echo "  Timeout per iteration: ${CC_TIMEOUT}s"
 echo "═══════════════════════════════════════════════════"
 
@@ -249,7 +259,7 @@ log_event "session_start" "tasks=$TASK_COUNT, branch=$SESSION_BRANCH"
 
 # ─── Main loop ──────────────────────────────────────────────────────
 ITERATION=0
-while [ "$ITERATION" -lt "$MAX_ITERATIONS" ]; do
+while [ "$MAX_ITERATIONS" -eq 0 ] 2>/dev/null || [ "$ITERATION" -lt "$MAX_ITERATIONS" ]; do
   # Check for interrupts
   if [ "$INTERRUPTED" -eq 1 ]; then
     echo "[loop] Interrupted. Cleaning up..."
@@ -279,7 +289,7 @@ while [ "$ITERATION" -lt "$MAX_ITERATIONS" ]; do
   TASK_STRIKES=$(echo "$TASK_JSON" | jq -r '.strikes')
 
   echo ""
-  echo "─── Iteration $((ITERATION + 1))/$MAX_ITERATIONS ───"
+  if [ "$MAX_ITERATIONS" -eq 0 ] 2>/dev/null; then echo "─── Iteration $((ITERATION + 1)) ───"; else echo "─── Iteration $((ITERATION + 1))/$MAX_ITERATIONS ───"; fi
   echo "Task: $TASK_DESC"
   echo "Source: $TASK_SOURCE (strikes: $TASK_STRIKES)"
 
@@ -383,7 +393,7 @@ log_event "session_end" "iterations=$ITERATION, completed=$COMPLETED_COUNT, skip
 
 echo ""
 echo "Results:"
-echo "  Iterations:  $ITERATION / $MAX_ITERATIONS"
+if [ "$MAX_ITERATIONS" -eq 0 ] 2>/dev/null; then echo "  Iterations:  $ITERATION (unlimited)"; else echo "  Iterations:  $ITERATION / $MAX_ITERATIONS"; fi
 echo "  Completed:   $COMPLETED_COUNT tasks"
 echo "  Skipped:     $SKIPPED_COUNT tasks (3-strike rule)"
 echo "  Commits:     $COMMIT_COUNT on $SESSION_BRANCH"
