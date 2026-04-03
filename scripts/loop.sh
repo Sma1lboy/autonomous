@@ -310,6 +310,7 @@ while [ "$MAX_ITERATIONS" -eq 0 ] 2>/dev/null || [ "$ITERATION" -lt "$MAX_ITERAT
 
   timeout "$CC_TIMEOUT" claude "${CC_ARGS[@]}" < /dev/null > "$CC_STREAM_FILE" 2>/dev/null &
   CC_PID=$!
+  LAST_TOOL=""
 
   # Live progress: tail the stream and print tool uses + text
   while kill -0 "$CC_PID" 2>/dev/null; do
