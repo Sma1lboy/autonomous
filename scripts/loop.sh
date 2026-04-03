@@ -277,9 +277,11 @@ if git -C "$PROJECT_DIR" show-ref --verify --quiet refs/heads/main 2>/dev/null; 
 elif git -C "$PROJECT_DIR" show-ref --verify --quiet refs/heads/master 2>/dev/null; then
   MAIN_BRANCH="master"
 else
-  MAIN_BRANCH=$(git -C "$PROJECT_DIR" symbolic-ref --short HEAD 2>/dev/null || echo "main")
+  # Fallback: use the first non-auto branch, or default to "main"
+  MAIN_BRANCH=$(git -C "$PROJECT_DIR" branch --format='%(refname:short)' 2>/dev/null | grep -v '^auto/' | head -1)
+  MAIN_BRANCH="${MAIN_BRANCH:-main}"
 fi
-git -C "$PROJECT_DIR" checkout -b "$SESSION_BRANCH" 2>/dev/null
+git -C "$PROJECT_DIR" checkout -b "$SESSION_BRANCH" "$MAIN_BRANCH" 2>/dev/null
 echo "[loop] Created branch: $SESSION_BRANCH"
 
 log_event "session_start" "tasks=$TASK_COUNT, branch=$SESSION_BRANCH"
