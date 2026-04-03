@@ -72,6 +72,10 @@ SESSIONS=$(echo "$ENTRIES" | jq -s '
     parallel_worker_timeout: [.[] | select(.event == "parallel_timeout")] | length,
     parallel_conflicts: [.[] | select(.event == "parallel_conflict")] | length,
     events: [.[].event]
+  }) | map(. + {
+    commits_per_iter: (if .iterations > 0 then (.commits / .iterations * 100 | round / 100) else 0 end),
+    cost_per_commit: (if .commits > 0 then (.total_cost / .commits * 10000 | round / 10000) else null end),
+    cost_per_iter: (if .iterations > 0 then (.total_cost / .iterations * 10000 | round / 10000) else null end)
   })
 ')
 
@@ -95,6 +99,21 @@ TOTALS=$(echo "$SESSIONS" | jq '{
     else 0 end),
   avg_cost_per_commit: (if ([.[].commits] | add // 0) > 0
     then (([.[].total_cost] | add // 0) / ([.[].commits] | add) * 10000 | round / 10000)
+    else 0 end),
+  avg_commits_per_session: (if length > 0
+    then (([.[].commits] | add // 0) / length * 100 | round / 100)
+    else 0 end),
+  avg_iters_per_session: (if length > 0
+    then (([.[].iterations] | add // 0) / length * 100 | round / 100)
+    else 0 end),
+  avg_duration_per_session_s: (if ([.[].duration_s | select(. != null)] | length) > 0
+    then (([.[].duration_s | select(. != null)] | add) / ([.[].duration_s | select(. != null)] | length) | round)
+    else null end),
+  overall_success_rate: (if ([.[].iterations] | add // 0) > 0
+    then (([.[].successes] | add // 0) * 10000 / ([.[].iterations] | add) | round / 100)
+    else 0 end),
+  overall_commits_per_iter: (if ([.[].iterations] | add // 0) > 0
+    then (([.[].commits] | add // 0) / ([.[].iterations] | add) * 100 | round / 100)
     else 0 end)
 }')
 
@@ -183,6 +202,32 @@ echo "  ${C_DIM}Cost/iter:${C_RESET}      ${C_CYAN}\$$COST_PER_ITER${C_RESET}"
 echo "  ${C_DIM}Timeouts:${C_RESET}       $TOTAL_TIMEOUTS"
 echo "  ${C_DIM}Budget stops:${C_RESET}   $BUDGET_HITS"
 
+# ─── Efficiency stats (only show with 1+ sessions) ───────────────
+if [ "$SESSION_COUNT" -gt 0 ]; then
+  AVG_COMMITS_SESS=$(echo "$TOTALS" | jq -r '.avg_commits_per_session')
+  AVG_ITERS_SESS=$(echo "$TOTALS" | jq -r '.avg_iters_per_session')
+  AVG_DUR_SESS_S=$(echo "$TOTALS" | jq -r '.avg_duration_per_session_s // 0')
+  COMMITS_PER_ITER=$(echo "$TOTALS" | jq -r '.overall_commits_per_iter')
+
+  # Format avg duration per session
+  if [ "$AVG_DUR_SESS_S" -ge 3600 ] 2>/dev/null; then
+    AVG_DUR_SESS_FMT="$((AVG_DUR_SESS_S/3600))h $((AVG_DUR_SESS_S%3600/60))m"
+  elif [ "$AVG_DUR_SESS_S" -ge 60 ] 2>/dev/null; then
+    AVG_DUR_SESS_FMT="$((AVG_DUR_SESS_S/60))m $((AVG_DUR_SESS_S%60))s"
+  elif [ "$AVG_DUR_SESS_S" -gt 0 ] 2>/dev/null; then
+    AVG_DUR_SESS_FMT="${AVG_DUR_SESS_S}s"
+  else
+    AVG_DUR_SESS_FMT="N/A"
+  fi
+
+  echo ""
+  echo "${C_BOLD}─── Efficiency ─────────────────────────────────────${C_RESET}"
+  echo "  ${C_DIM}Commits/iter:${C_RESET}   ${C_GREEN}$COMMITS_PER_ITER${C_RESET}"
+  echo "  ${C_DIM}Avg commits/sess:${C_RESET} $AVG_COMMITS_SESS"
+  echo "  ${C_DIM}Avg iters/sess:${C_RESET}  $AVG_ITERS_SESS"
+  echo "  ${C_DIM}Avg duration/sess:${C_RESET} $AVG_DUR_SESS_FMT"
+fi
+
 # Parallel worker stats (only show if parallel mode was used)
 PAR_WORKER_OK=$(echo "$TOTALS" | jq -r '.parallel_worker_ok // 0')
 PAR_WORKER_TMO=$(echo "$TOTALS" | jq -r '.parallel_worker_timeout // 0')
@@ -200,14 +245,15 @@ echo ""
 
 # ─── Per-session table ────────────────────────────────────────────
 echo "${C_BOLD}─── Sessions ───────────────────────────────────────${C_RESET}"
-printf "  ${C_DIM}%-12s  %-12s  %5s  %4s  %8s  %9s  %s${C_RESET}\n" "SESSION" "DATE" "ITERS" "CMTS" "DURATION" "COST" "STATUS"
-printf "  ${C_DIM}%-12s  %-12s  %5s  %4s  %8s  %9s  %s${C_RESET}\n" "───────────" "──────────" "─────" "────" "────────" "─────────" "──────"
+printf "  ${C_DIM}%-12s  %-12s  %5s  %4s  %4s  %8s  %9s  %s${C_RESET}\n" "SESSION" "DATE" "ITERS" "CMTS" "C/I" "DURATION" "COST" "STATUS"
+printf "  ${C_DIM}%-12s  %-12s  %5s  %4s  %4s  %8s  %9s  %s${C_RESET}\n" "───────────" "──────────" "─────" "────" "────" "────────" "─────────" "──────"
 
 echo "$SESSIONS" | jq -r '.[] |
   .session as $s |
   (.start_ts // "?" | split("T")[0] // "?") as $date |
   (.iterations | tostring) as $iters |
   (.commits | tostring) as $cmts |
+  (.commits_per_iter | tostring) as $cpi |
   (.duration_s // null) as $dur |
   (if $dur == null then "-"
    elif $dur >= 3600 then "\($dur / 3600 | floor)h \($dur % 3600 / 60 | floor)m"
@@ -219,8 +265,8 @@ echo "$SESSIONS" | jq -r '.[] |
    elif .failures > 0 and .successes == 0 then "failed"
    elif .successes > 0 then "ok"
    else "no-op" end) as $status |
-  "\($s)\t\($date)\t\($iters)\t\($cmts)\t\($dur_fmt)\t\($cost)\t\($status)"
-' | while IFS=$'\t' read -r session date iters cmts dur cost status; do
+  "\($s)\t\($date)\t\($iters)\t\($cmts)\t\($cpi)\t\($dur_fmt)\t\($cost)\t\($status)"
+' | while IFS=$'\t' read -r session date iters cmts cpi dur cost status; do
   case "$status" in
     ok)      status_fmt="${C_GREEN}$status${C_RESET}" ;;
     failed)  status_fmt="${C_RED}$status${C_RESET}" ;;
@@ -228,7 +274,7 @@ echo "$SESSIONS" | jq -r '.[] |
     budget)  status_fmt="${C_YELLOW}$status${C_RESET}" ;;
     *)       status_fmt="$status" ;;
   esac
-  printf "  %-12s  %-12s  %5s  %4s  %8s  ${C_CYAN}%9s${C_RESET}  %s\n" "$session" "$date" "$iters" "$cmts" "$dur" "$cost" "$status_fmt"
+  printf "  %-12s  %-12s  %5s  %4s  %4s  %8s  ${C_CYAN}%9s${C_RESET}  %s\n" "$session" "$date" "$iters" "$cmts" "$cpi" "$dur" "$cost" "$status_fmt"
 done
 echo ""
 

@@ -1758,6 +1758,173 @@ assert_not_contains "$OUTPUT" "Iteration 2" "parallel: did not run iteration 2"
 cleanup_repo "$REPO"
 echo ""
 
+# ─── Test: report.sh per-session efficiency metrics ──────────────
+echo "── test_report_per_session_efficiency ──"
+REPO=$(setup_repo)
+SLUG=$(basename "$REPO")
+DATA_DIR="$HOME/.autonomous-skill/projects/$SLUG"
+mkdir -p "$DATA_DIR"
+
+# Two sessions with different efficiency
+cat > "$DATA_DIR/autonomous-log.jsonl" << 'EOF'
+{"ts":"2025-02-01T00:00:00Z","session":"500","iteration":0,"event":"session_start","cost_usd":0,"detail":"branch=auto/session-500"}
+{"ts":"2025-02-01T00:01:00Z","session":"500","iteration":1,"event":"success","cost_usd":0.30,"detail":"commits=1, elapsed=60s"}
+{"ts":"2025-02-01T00:02:00Z","session":"500","iteration":2,"event":"success","cost_usd":0.20,"detail":"commits=1, elapsed=50s"}
+{"ts":"2025-02-01T00:03:00Z","session":"500","iteration":2,"event":"session_end","cost_usd":0,"detail":"iterations=2, commits=2, duration=180s"}
+{"ts":"2025-02-02T00:00:00Z","session":"600","iteration":0,"event":"session_start","cost_usd":0,"detail":"branch=auto/session-600"}
+{"ts":"2025-02-02T00:01:00Z","session":"600","iteration":1,"event":"success","cost_usd":0.40,"detail":"commits=1, elapsed=60s"}
+{"ts":"2025-02-02T00:02:00Z","session":"600","iteration":2,"event":"no_change","cost_usd":0.10,"detail":"elapsed=30s"}
+{"ts":"2025-02-02T00:03:00Z","session":"600","iteration":3,"event":"success","cost_usd":0.30,"detail":"commits=1, elapsed=50s"}
+{"ts":"2025-02-02T00:04:00Z","session":"600","iteration":3,"event":"session_end","cost_usd":0,"detail":"iterations=3, commits=2, duration=240s"}
+EOF
+
+# JSON report — per-session efficiency fields
+JSON_OUTPUT=$("$PROJECT_ROOT/scripts/report.sh" "$REPO" --json 2>&1)
+
+# Session 500: 2 commits / 2 iters = 1.0 commits_per_iter
+TESTS_RUN=$((TESTS_RUN + 1))
+CPI_500=$(echo "$JSON_OUTPUT" | jq '[.sessions[] | select(.session == "500")][0].commits_per_iter' 2>/dev/null)
+if [ "$CPI_500" = "1" ]; then
+  pass "report: session 500 commits_per_iter = 1"
+else
+  fail "report: session 500 commits_per_iter (got $CPI_500, expected 1)"
+fi
+
+# Session 600: 2 commits / 3 iters = 0.67
+TESTS_RUN=$((TESTS_RUN + 1))
+CPI_600=$(echo "$JSON_OUTPUT" | jq '[.sessions[] | select(.session == "600")][0].commits_per_iter' 2>/dev/null)
+if echo "$CPI_600" | grep -qE '^0\.6[67]$'; then
+  pass "report: session 600 commits_per_iter ~ 0.67"
+else
+  fail "report: session 600 commits_per_iter (got $CPI_600, expected ~0.67)"
+fi
+
+# Per-session cost_per_commit
+TESTS_RUN=$((TESTS_RUN + 1))
+CPC_500=$(echo "$JSON_OUTPUT" | jq '[.sessions[] | select(.session == "500")][0].cost_per_commit' 2>/dev/null)
+if [ "$CPC_500" = "0.25" ]; then
+  pass "report: session 500 cost_per_commit = 0.25"
+else
+  fail "report: session 500 cost_per_commit (got $CPC_500, expected 0.25)"
+fi
+
+# Per-session cost_per_iter
+TESTS_RUN=$((TESTS_RUN + 1))
+CPI_COST_600=$(echo "$JSON_OUTPUT" | jq '[.sessions[] | select(.session == "600")][0].cost_per_iter' 2>/dev/null)
+if echo "$CPI_COST_600" | grep -qE '^0\.26'; then
+  pass "report: session 600 cost_per_iter ~ 0.267"
+else
+  fail "report: session 600 cost_per_iter (got $CPI_COST_600, expected ~0.267)"
+fi
+
+# Cross-session aggregate: avg_commits_per_session = (2+2)/2 = 2
+TESTS_RUN=$((TESTS_RUN + 1))
+AVG_COMMITS=$(echo "$JSON_OUTPUT" | jq '.totals.avg_commits_per_session' 2>/dev/null)
+if [ "$AVG_COMMITS" = "2" ]; then
+  pass "report: avg_commits_per_session = 2"
+else
+  fail "report: avg_commits_per_session (got $AVG_COMMITS, expected 2)"
+fi
+
+# avg_iters_per_session = (2+3)/2 = 2.5
+TESTS_RUN=$((TESTS_RUN + 1))
+AVG_ITERS=$(echo "$JSON_OUTPUT" | jq '.totals.avg_iters_per_session' 2>/dev/null)
+if [ "$AVG_ITERS" = "2.5" ]; then
+  pass "report: avg_iters_per_session = 2.5"
+else
+  fail "report: avg_iters_per_session (got $AVG_ITERS, expected 2.5)"
+fi
+
+# avg_duration_per_session_s = (180+240)/2 = 210
+TESTS_RUN=$((TESTS_RUN + 1))
+AVG_DUR=$(echo "$JSON_OUTPUT" | jq '.totals.avg_duration_per_session_s' 2>/dev/null)
+if [ "$AVG_DUR" = "210" ]; then
+  pass "report: avg_duration_per_session_s = 210"
+else
+  fail "report: avg_duration_per_session_s (got $AVG_DUR, expected 210)"
+fi
+
+# overall_commits_per_iter = 4 commits / 5 iters = 0.8
+TESTS_RUN=$((TESTS_RUN + 1))
+OVERALL_CPI=$(echo "$JSON_OUTPUT" | jq '.totals.overall_commits_per_iter' 2>/dev/null)
+if [ "$OVERALL_CPI" = "0.8" ]; then
+  pass "report: overall_commits_per_iter = 0.8"
+else
+  fail "report: overall_commits_per_iter (got $OVERALL_CPI, expected 0.8)"
+fi
+
+# overall_success_rate = 4 successes / 5 iters = 80%
+# (session 500: 2 success events, session 600: 2 success events, 5 total iters)
+TESTS_RUN=$((TESTS_RUN + 1))
+OVERALL_SR=$(echo "$JSON_OUTPUT" | jq '.totals.overall_success_rate' 2>/dev/null)
+if [ "$OVERALL_SR" = "80" ]; then
+  pass "report: overall_success_rate = 80"
+else
+  fail "report: overall_success_rate (got $OVERALL_SR, expected 80)"
+fi
+
+# Human-readable report should show Efficiency section
+OUTPUT=$("$PROJECT_ROOT/scripts/report.sh" "$REPO" 2>&1)
+assert_contains "$OUTPUT" "Efficiency" "report: shows Efficiency section"
+assert_contains "$OUTPUT" "Commits/iter:" "report: shows commits/iter metric"
+assert_contains "$OUTPUT" "Avg commits/sess:" "report: shows avg commits per session"
+assert_contains "$OUTPUT" "Avg iters/sess:" "report: shows avg iters per session"
+assert_contains "$OUTPUT" "Avg duration/sess:" "report: shows avg duration per session"
+
+# Sessions table should have C/I column
+assert_contains "$OUTPUT" "C/I" "report: sessions table has C/I column"
+
+rm -rf "$DATA_DIR"
+cleanup_repo "$REPO"
+echo ""
+
+# ─── Test: report.sh single session efficiency ──────────────────
+echo "── test_report_single_session_efficiency ──"
+REPO=$(setup_repo)
+SLUG=$(basename "$REPO")
+DATA_DIR="$HOME/.autonomous-skill/projects/$SLUG"
+mkdir -p "$DATA_DIR"
+
+# Single session, 1 iteration, 0 commits
+cat > "$DATA_DIR/autonomous-log.jsonl" << 'EOF'
+{"ts":"2025-03-01T00:00:00Z","session":"700","iteration":0,"event":"session_start","cost_usd":0,"detail":"branch=auto/session-700"}
+{"ts":"2025-03-01T00:01:00Z","session":"700","iteration":1,"event":"no_change","cost_usd":0.15,"detail":"elapsed=60s"}
+{"ts":"2025-03-01T00:02:00Z","session":"700","iteration":1,"event":"session_end","cost_usd":0,"detail":"iterations=1, commits=0, duration=120s"}
+EOF
+
+JSON_OUTPUT=$("$PROJECT_ROOT/scripts/report.sh" "$REPO" --json 2>&1)
+
+# commits_per_iter = 0/1 = 0
+TESTS_RUN=$((TESTS_RUN + 1))
+CPI=$(echo "$JSON_OUTPUT" | jq '.sessions[0].commits_per_iter' 2>/dev/null)
+if [ "$CPI" = "0" ]; then
+  pass "report: zero commits gives commits_per_iter = 0"
+else
+  fail "report: zero commits commits_per_iter (got $CPI, expected 0)"
+fi
+
+# cost_per_commit should be null when 0 commits
+TESTS_RUN=$((TESTS_RUN + 1))
+CPC=$(echo "$JSON_OUTPUT" | jq '.sessions[0].cost_per_commit' 2>/dev/null)
+if [ "$CPC" = "null" ]; then
+  pass "report: zero commits gives cost_per_commit = null"
+else
+  fail "report: zero commits cost_per_commit (got $CPC, expected null)"
+fi
+
+# overall_commits_per_iter = 0
+TESTS_RUN=$((TESTS_RUN + 1))
+OVERALL_CPI=$(echo "$JSON_OUTPUT" | jq '.totals.overall_commits_per_iter' 2>/dev/null)
+if [ "$OVERALL_CPI" = "0" ]; then
+  pass "report: zero commits overall_commits_per_iter = 0"
+else
+  fail "report: zero commits overall_commits_per_iter (got $OVERALL_CPI, expected 0)"
+fi
+
+rm -rf "$DATA_DIR"
+cleanup_repo "$REPO"
+echo ""
+
 # ═══════════════════════════════════════════════════════════════════
 # SUMMARY
 # ═══════════════════════════════════════════════════════════════════

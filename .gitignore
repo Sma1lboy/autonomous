@@ -1,0 +1,10 @@
+# Per-project generated files (don't commit user-specific data)
+OWNER.md
+TRACE.md
+
+# OS
+.DS_Store
+
+# Temp
+/tmp/
+*.jsonl
