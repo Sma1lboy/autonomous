@@ -10,6 +10,8 @@ add_task() {
   local description="$1"
   local source="$2"
   local priority="${3:-5}"
+  # Sanitize: strip control characters (NUL, tabs, newlines, etc.) that break JSON
+  description=$(printf '%s' "$description" | LC_ALL=C tr -d '[:cntrl:]')
   # Generate ID from description hash
   local id
   id=$(echo -n "$description" | shasum -a 256 | cut -c1-12)
@@ -38,7 +40,10 @@ if git -C "$PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
       file=$(echo "$match" | cut -d: -f1)
       content=$(echo "$match" | cut -d: -f3-)
       # Extract the actual TODO/FIXME/HACK message after the keyword
-      comment=$(echo "$content" | sed -E 's/.*\b(TODO|FIXME|HACK)[: ]+//' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' | head -c 200)
+      # Extract comment, strip whitespace, then truncate by characters (not bytes)
+      # to avoid splitting multi-byte UTF-8 characters
+      comment=$(echo "$content" | sed -E 's/.*\b(TODO|FIXME|HACK)[: ]+//' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+      comment="${comment:0:200}"
       if [ -n "$comment" ] && [ ${#comment} -gt 3 ]; then
         add_task "$comment (in $file)" "code-comment" 5
       fi
