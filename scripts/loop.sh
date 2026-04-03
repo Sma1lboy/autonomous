@@ -28,6 +28,15 @@ Options:
   --timeout N              Seconds per CC invocation (default: 900)
   --help                   Show this help message
 
+Config file:
+  Place .autonomous-skill.yml in the project root. Supported keys:
+    max_iterations: 10
+    max_cost: 5.00
+    timeout: 600
+    direction: Fix all security bugs
+
+  Priority: CLI flags > env vars > config file > defaults
+
 Environment variables:
   MAX_ITERATIONS           Same as --max-iterations (flag takes precedence)
   MAX_COST_USD             Same as --max-cost (flag takes precedence)
@@ -91,10 +100,29 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-MAX_ITERATIONS="${MAX_ITER_ARG:-${MAX_ITERATIONS:-50}}"  # 0 = unlimited; --max-iterations or env var
-CC_TIMEOUT="${TIMEOUT_ARG:-${CC_TIMEOUT:-900}}"  # --timeout or env var
-MAX_COST_USD="${MAX_COST_ARG:-${MAX_COST_USD:-0}}"  # 0 = unlimited; --max-cost or env var
-DIRECTION="${DIRECTION_ARG:-${AUTONOMOUS_DIRECTION:-}}"
+# ─── Config file ───────────────────────────────────────────────────
+# Read a value from .autonomous-skill.yml (simple key: value YAML).
+# Priority: CLI flag > env var > config file > default
+read_config() {
+  local config_file="$1" key="$2"
+  [ -f "$config_file" ] || return 1
+  # Match "key: value" or "key: 'value'" or 'key: "value"', skip comments
+  local val
+  val=$(grep -E "^${key}:" "$config_file" 2>/dev/null | head -1 | sed "s/^${key}:[[:space:]]*//" | sed 's/^["'"'"']//' | sed 's/["'"'"']$//' | sed 's/[[:space:]]*#.*$//' | sed 's/[[:space:]]*$//')
+  [ -n "$val" ] && echo "$val" || return 1
+}
+
+CONFIG_FILE="$PROJECT_DIR/.autonomous-skill.yml"
+CFG_MAX_ITER=$(read_config "$CONFIG_FILE" "max_iterations" 2>/dev/null || true)
+CFG_TIMEOUT=$(read_config "$CONFIG_FILE" "timeout" 2>/dev/null || true)
+CFG_MAX_COST=$(read_config "$CONFIG_FILE" "max_cost" 2>/dev/null || true)
+CFG_DIRECTION=$(read_config "$CONFIG_FILE" "direction" 2>/dev/null || true)
+
+# Priority: CLI flag > env var > config file > default
+MAX_ITERATIONS="${MAX_ITER_ARG:-${MAX_ITERATIONS:-${CFG_MAX_ITER:-50}}}"  # 0 = unlimited
+CC_TIMEOUT="${TIMEOUT_ARG:-${CC_TIMEOUT:-${CFG_TIMEOUT:-900}}}"
+MAX_COST_USD="${MAX_COST_ARG:-${MAX_COST_USD:-${CFG_MAX_COST:-0}}}"  # 0 = unlimited
+DIRECTION="${DIRECTION_ARG:-${AUTONOMOUS_DIRECTION:-${CFG_DIRECTION:-}}}"
 
 # Paths
 SLUG=$(basename "$(git -C "$PROJECT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$PROJECT_DIR")")
@@ -244,6 +272,9 @@ if [ "$DRY_RUN" -eq 1 ]; then
   else
     echo "  Branch: $SESSION_BRANCH (would create)"
   fi
+  if [ -f "$CONFIG_FILE" ]; then
+    echo "  Config: $CONFIG_FILE"
+  fi
   echo "═══════════════════════════════════════════════════"
   echo ""
 
@@ -311,6 +342,7 @@ echo "  Project: $(basename "$PROJECT_DIR")"
 echo "  Timeout: ${CC_TIMEOUT}s per iteration"
 echo "$MAX_COST_USD" | grep -qE '^0(\.0+)?$' && echo "  Budget: unlimited" || echo "  Budget: \$$MAX_COST_USD"
 echo "  Branch: $SESSION_BRANCH"
+[ -f "$CONFIG_FILE" ] && echo "  Config: .autonomous-skill.yml"
 echo "═══════════════════════════════════════════════════"
 echo ""
 

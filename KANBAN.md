@@ -4,7 +4,6 @@ Project board for autonomous-skill. Updated by the autonomous agent and maintain
 
 ## Todo
 
-- [ ] Add `.autonomous-skill.yml` config file support for per-project settings
 - [ ] Improve live progress — use tail/offset instead of re-parsing full stream file
 - [ ] discover.sh: scan more file types for TODOs (`.tsx`, `.jsx`, `.cpp`, `.c`, `.md`)
 
@@ -14,6 +13,7 @@ _(nothing in progress)_
 
 ## Done
 
+- [x] Add `.autonomous-skill.yml` config file support (22 new tests, 90 total)
 - [x] Add `--resume` flag — continue on existing session branch (12 new tests, 68 total)
 - [x] Add `--help`/`-h` flag + `--timeout` CLI flag + better error messages (11 new tests, 56 total)
 

@@ -688,6 +688,150 @@ OUTPUT=$(bash "$LOOP" --help 2>&1)
 assert_contains "$OUTPUT" "resume" "--help lists --resume"
 echo ""
 
+# ── test_config_file_sets_defaults ────────────────────────────────────
+echo "── test_config_file_sets_defaults ──"
+REPO=$(setup_repo)
+
+# Create a config file that sets max_iterations to 2 and direction
+cat > "$REPO/.autonomous-skill.yml" << 'EOF'
+max_iterations: 2
+direction: Fix config bugs
+timeout: 120
+max_cost: 3.50
+EOF
+git -C "$REPO" add .autonomous-skill.yml
+git -C "$REPO" commit -m "add config" --no-gpg-sign --quiet 2>/dev/null
+
+# Run dry-run (no CLI flags) — config file should set the values
+# Clear inherited env vars so config file takes effect
+OUTPUT=$(cd "$REPO" && MAX_ITERATIONS= AUTONOMOUS_DIRECTION= CC_TIMEOUT= MAX_COST_USD= bash "$LOOP" --dry-run "$REPO" 2>&1)
+
+assert_contains "$OUTPUT" "Iterations:.*2" "config file sets max_iterations"
+assert_contains "$OUTPUT" "Direction:.*Fix config bugs" "config file sets direction"
+assert_contains "$OUTPUT" "Timeout:.*120s" "config file sets timeout"
+assert_contains "$OUTPUT" "Budget:.*3.50" "config file sets max_cost"
+assert_contains "$OUTPUT" "Config:.*autonomous-skill.yml" "dry-run shows config file loaded"
+
+cleanup_repo "$REPO"
+echo ""
+
+# ── test_cli_flag_overrides_config ───────────────────────────────────
+echo "── test_cli_flag_overrides_config ──"
+REPO=$(setup_repo)
+
+cat > "$REPO/.autonomous-skill.yml" << 'EOF'
+max_iterations: 2
+direction: From config
+timeout: 120
+EOF
+git -C "$REPO" add .autonomous-skill.yml
+git -C "$REPO" commit -m "add config" --no-gpg-sign --quiet 2>/dev/null
+
+# CLI flags should override config (clear env vars to isolate)
+OUTPUT=$(cd "$REPO" && MAX_ITERATIONS= AUTONOMOUS_DIRECTION= CC_TIMEOUT= MAX_COST_USD= bash "$LOOP" --dry-run --max-iterations 7 --direction "From CLI" --timeout 999 "$REPO" 2>&1)
+
+assert_contains "$OUTPUT" "Iterations:.*7" "CLI --max-iterations overrides config"
+assert_contains "$OUTPUT" "Direction:.*From CLI" "CLI --direction overrides config"
+assert_contains "$OUTPUT" "Timeout:.*999s" "CLI --timeout overrides config"
+
+cleanup_repo "$REPO"
+echo ""
+
+# ── test_env_var_overrides_config ────────────────────────────────────
+echo "── test_env_var_overrides_config ──"
+REPO=$(setup_repo)
+
+cat > "$REPO/.autonomous-skill.yml" << 'EOF'
+max_iterations: 2
+direction: From config
+EOF
+git -C "$REPO" add .autonomous-skill.yml
+git -C "$REPO" commit -m "add config" --no-gpg-sign --quiet 2>/dev/null
+
+# Env vars should override config (but not CLI flags)
+OUTPUT=$(cd "$REPO" && MAX_ITERATIONS=15 AUTONOMOUS_DIRECTION="From env" bash "$LOOP" --dry-run "$REPO" 2>&1)
+
+assert_contains "$OUTPUT" "Iterations:.*15" "env var MAX_ITERATIONS overrides config"
+assert_contains "$OUTPUT" "Direction:.*From env" "env var AUTONOMOUS_DIRECTION overrides config"
+
+cleanup_repo "$REPO"
+echo ""
+
+# ── test_config_file_in_run_mode ─────────────────────────────────────
+echo "── test_config_file_in_run_mode ──"
+REPO=$(setup_repo)
+
+cat > "$REPO/.autonomous-skill.yml" << 'EOF'
+max_iterations: 1
+direction: Config-driven run
+timeout: 300
+EOF
+git -C "$REPO" add .autonomous-skill.yml
+git -C "$REPO" commit -m "add config" --no-gpg-sign --quiet 2>/dev/null
+
+OUTPUT=$(cd "$REPO" && \
+  MOCK_CLAUDE_COMMIT=1 \
+  MOCK_CLAUDE_REPO="$REPO" \
+  MOCK_CLAUDE_COST=0.10 \
+  MAX_ITERATIONS= \
+  AUTONOMOUS_DIRECTION= \
+  CC_TIMEOUT= \
+  MAX_COST_USD= \
+  PATH="$SCRIPT_DIR:$PATH" \
+  bash "$LOOP" "$REPO" 2>&1)
+
+assert_contains "$OUTPUT" "Iterations:.*1" "config file max_iterations works in run mode"
+assert_contains "$OUTPUT" "Direction:.*Config-driven run" "config file direction works in run mode"
+assert_contains "$OUTPUT" "Config:.*autonomous-skill.yml" "run mode shows config loaded"
+assert_not_contains "$OUTPUT" "Iteration 2" "config max_iterations stops after 1"
+
+SLUG=$(basename "$REPO")
+rm -f "$HOME/.autonomous-skill/projects/$SLUG/autonomous-log.jsonl"
+cleanup_repo "$REPO"
+echo ""
+
+# ── test_no_config_file ──────────────────────────────────────────────
+echo "── test_no_config_file ──"
+REPO=$(setup_repo)
+
+# No config file — defaults should apply (clear env vars)
+OUTPUT=$(cd "$REPO" && MAX_ITERATIONS= AUTONOMOUS_DIRECTION= CC_TIMEOUT= MAX_COST_USD= bash "$LOOP" --dry-run "$REPO" 2>&1)
+
+assert_contains "$OUTPUT" "Iterations:.*50" "default max_iterations without config"
+assert_contains "$OUTPUT" "Timeout:.*900s" "default timeout without config"
+assert_not_contains "$OUTPUT" "Config:" "no config line when file absent"
+
+cleanup_repo "$REPO"
+echo ""
+
+# ── test_config_quoted_values ────────────────────────────────────────
+echo "── test_config_quoted_values ──"
+REPO=$(setup_repo)
+
+# Test that quoted values are handled correctly
+cat > "$REPO/.autonomous-skill.yml" << 'EOF'
+direction: "Fix all the things"
+max_iterations: 3
+EOF
+git -C "$REPO" add .autonomous-skill.yml
+git -C "$REPO" commit -m "add config" --no-gpg-sign --quiet 2>/dev/null
+
+OUTPUT=$(cd "$REPO" && MAX_ITERATIONS= AUTONOMOUS_DIRECTION= CC_TIMEOUT= MAX_COST_USD= bash "$LOOP" --dry-run "$REPO" 2>&1)
+
+assert_contains "$OUTPUT" "Direction:.*Fix all the things" "config handles double-quoted values"
+assert_contains "$OUTPUT" "Iterations:.*3" "config handles unquoted numeric values"
+
+cleanup_repo "$REPO"
+echo ""
+
+# ── test_help_lists_config ───────────────────────────────────────────
+echo "── test_help_lists_config ──"
+OUTPUT=$(bash "$LOOP" --help 2>&1)
+assert_contains "$OUTPUT" "autonomous-skill.yml" "--help mentions config file"
+assert_contains "$OUTPUT" "max_iterations" "--help shows config keys"
+assert_contains "$OUTPUT" "Priority.*CLI.*env.*config.*default" "--help shows priority chain"
+echo ""
+
 # ═══════════════════════════════════════════════════════════════════
 # SUMMARY
 # ═══════════════════════════════════════════════════════════════════
