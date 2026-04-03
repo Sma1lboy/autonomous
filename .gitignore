@@ -1,6 +1,13 @@
-# Per-project generated files (don't commit user-specific data)
+# Auto-generated per-project (created at runtime)
 OWNER.md
 TRACE.md
+KANBAN.md
+TODOS.md
+
+# Design/planning docs (internal, not for distribution)
+DESIGN.md
+DESIGN-CN.md
+COMPETITIVE.md
 
 # OS
 .DS_Store
