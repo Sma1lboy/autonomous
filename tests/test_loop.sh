@@ -832,6 +832,50 @@ assert_contains "$OUTPUT" "max_iterations" "--help shows config keys"
 assert_contains "$OUTPUT" "Priority.*CLI.*env.*config.*default" "--help shows priority chain"
 echo ""
 
+# ─── Test: discover.sh scans extended file types ─────────────────
+echo "── test_discover_extended_filetypes ──"
+REPO=$(setup_repo)
+
+# Create files with TODO comments in newly-supported file types
+cat > "$REPO/App.tsx" << 'EOF'
+// TODO: migrate to server components
+export default function App() { return <div /> }
+EOF
+
+cat > "$REPO/Button.jsx" << 'EOF'
+// FIXME: accessibility aria-label missing
+export const Button = () => <button />
+EOF
+
+cat > "$REPO/main.c" << 'EOF'
+// TODO: free allocated memory in cleanup
+int main() { return 0; }
+EOF
+
+cat > "$REPO/engine.cpp" << 'EOF'
+// HACK: workaround for race condition in renderer
+void render() {}
+EOF
+
+cat > "$REPO/NOTES.md" << 'EOF'
+<!-- TODO: document the deploy process -->
+# Notes
+EOF
+
+git -C "$REPO" add -A
+git -C "$REPO" commit -m "add multi-lang source files" --no-gpg-sign --quiet 2>/dev/null
+
+OUTPUT=$("$PROJECT_ROOT/scripts/discover.sh" "$REPO" 2>/dev/null)
+
+assert_contains "$OUTPUT" "server components" "discover.sh finds TODO in .tsx"
+assert_contains "$OUTPUT" "aria-label" "discover.sh finds FIXME in .jsx"
+assert_contains "$OUTPUT" "free allocated memory" "discover.sh finds TODO in .c"
+assert_contains "$OUTPUT" "race condition" "discover.sh finds HACK in .cpp"
+assert_contains "$OUTPUT" "deploy process" "discover.sh finds TODO in .md"
+
+cleanup_repo "$REPO"
+echo ""
+
 # ═══════════════════════════════════════════════════════════════════
 # SUMMARY
 # ═══════════════════════════════════════════════════════════════════

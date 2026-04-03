@@ -68,7 +68,7 @@ if git -C "$PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
         add_task "$comment (in $file)" "code-comment" 5
       fi
     fi
-  done < <(git -C "$PROJECT_DIR" grep -n -i '\bTODO[: ]\|FIXME[: ]\|HACK[: ]' -- '*.ts' '*.js' '*.py' '*.rs' '*.go' '*.rb' '*.java' '*.sh' ':!scripts/discover.sh' 2>/dev/null | head -30 || true)
+  done < <(git -C "$PROJECT_DIR" grep -n -i '\bTODO[: ]\|FIXME[: ]\|HACK[: ]' -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.py' '*.rs' '*.go' '*.rb' '*.java' '*.sh' '*.c' '*.cpp' '*.h' '*.hpp' '*.md' ':!scripts/discover.sh' 2>/dev/null | head -30 || true)
 fi
 
 # Source 4: GitHub issues (if gh is available and we're in a repo)

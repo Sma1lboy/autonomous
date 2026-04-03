@@ -39,6 +39,8 @@
 ## Completed (v0.6)
 - [x] Add `.autonomous-skill.yml` config file support (22 new tests, 90 total)
 
+## Completed (v0.7)
+- [x] discover.sh: scan more file types for TODOs (`.tsx`, `.jsx`, `.cpp`, `.c`, `.md`, `.h`, `.hpp`)
+
 ## Open
 - [ ] Improve live progress — use tail/offset instead of re-parsing full stream file
-- [ ] discover.sh: scan more file types for TODOs (`.tsx`, `.jsx`, `.cpp`, `.c`, `.md`)
