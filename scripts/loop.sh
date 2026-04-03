@@ -25,8 +25,16 @@ mkdir -p "$DATA_DIR"
 # Excluded workflows (dangerous in autonomous mode)
 EXCLUDED_WORKFLOWS="/ship /land-and-deploy /careful /guard"
 
-# ─── Signal handling ────────────────────────────────────────────────
+# ─── Signal handling & cleanup ──────────────────────────────────────
 INTERRUPTED=0
+CC_STREAM_FILE=""  # Initialized here so cleanup trap can access it
+
+cleanup() {
+  if [ -n "$CC_STREAM_FILE" ] && [ -f "$CC_STREAM_FILE" ]; then
+    rm -f "$CC_STREAM_FILE"
+  fi
+}
+trap cleanup EXIT
 trap 'INTERRUPTED=1; echo "[loop] SIGINT received, finishing current task..." >&2' INT
 
 # ─── Logging ──────────────────────────────────────────────────────��─
