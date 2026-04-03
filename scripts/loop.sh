@@ -49,6 +49,7 @@ cleanup() {
 }
 trap cleanup EXIT
 trap 'INTERRUPTED=1; echo "[loop] SIGINT received, finishing current task..." >&2' INT
+trap 'echo "[loop] SIGTERM received, exiting..." >&2; exit 143' TERM
 
 # ─── Logging ──────────────────────────────────────────────────────��─
 log_event() {
