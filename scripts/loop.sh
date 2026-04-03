@@ -328,7 +328,14 @@ else
   MAIN_BRANCH=$(git -C "$PROJECT_DIR" branch --format='%(refname:short)' 2>/dev/null | grep -v '^auto/' | head -1)
   MAIN_BRANCH="${MAIN_BRANCH:-main}"
 fi
-git -C "$PROJECT_DIR" checkout -b "$SESSION_BRANCH" "$MAIN_BRANCH" 2>/dev/null
+if ! git -C "$PROJECT_DIR" checkout -b "$SESSION_BRANCH" "$MAIN_BRANCH" 2>/dev/null; then
+  # Branch name collision (e.g., two sessions started in the same second) — append random suffix
+  SESSION_BRANCH="${SESSION_BRANCH}-$(head -c 4 /dev/urandom | od -An -tx1 | tr -d ' ')"
+  if ! git -C "$PROJECT_DIR" checkout -b "$SESSION_BRANCH" "$MAIN_BRANCH" 2>/dev/null; then
+    echo "[loop] ERROR: Failed to create session branch $SESSION_BRANCH" >&2
+    exit 1
+  fi
+fi
 echo "[loop] Created branch: $SESSION_BRANCH"
 
 log_event "session_start" "tasks=$TASK_COUNT, branch=$SESSION_BRANCH"
