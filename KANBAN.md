@@ -4,7 +4,7 @@ Project board for autonomous-skill. Updated by the autonomous agent and maintain
 
 ## Todo
 
-- [ ] Improve live progress — use tail/offset instead of re-parsing full stream file
+_(empty — suggest new tasks or report bugs)_
 
 ## Doing
 
@@ -12,6 +12,7 @@ _(nothing in progress)_
 
 ## Done
 
+- [x] Improve live progress — tail/offset instead of re-parsing full stream file
 - [x] discover.sh: scan extended file types — .tsx, .jsx, .cpp, .c, .h, .hpp, .md (5 new tests, 95 total)
 - [x] Add `.autonomous-skill.yml` config file support (22 new tests, 90 total)
 - [x] Add `--resume` flag — continue on existing session branch (12 new tests, 68 total)

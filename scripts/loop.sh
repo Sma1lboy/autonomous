@@ -381,13 +381,20 @@ while [ "$MAX_ITERATIONS" -eq 0 ] 2>/dev/null || [ "$ITERATION" -lt "$MAX_ITERAT
   timeout "$CC_TIMEOUT" claude "${CC_ARGS[@]}" < /dev/null > "$CC_STREAM_FILE" 2>/dev/null &
   CC_PID=$!
 
-  # Live progress
+  # Live progress — use byte offset to avoid re-parsing the full stream file
+  STREAM_OFFSET=0
   while kill -0 "$CC_PID" 2>/dev/null; do
     if [ -s "$CC_STREAM_FILE" ]; then
-      NEW_TOOL=$(jq -c 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use") | .name' "$CC_STREAM_FILE" 2>/dev/null | tail -1)
-      if [ -n "$NEW_TOOL" ] && [ "$NEW_TOOL" != "$LAST_TOOL" ]; then
-        echo "  [cc] $NEW_TOOL"
-        LAST_TOOL="$NEW_TOOL"
+      FILE_SIZE=$(wc -c < "$CC_STREAM_FILE" 2>/dev/null | tr -d ' ')
+      if [ "$FILE_SIZE" -gt "$STREAM_OFFSET" ]; then
+        NEW_TOOL=$(tail -c +"$((STREAM_OFFSET + 1))" "$CC_STREAM_FILE" 2>/dev/null \
+          | jq -c 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use") | .name' 2>/dev/null \
+          | tail -1)
+        STREAM_OFFSET="$FILE_SIZE"
+        if [ -n "$NEW_TOOL" ] && [ "$NEW_TOOL" != "$LAST_TOOL" ]; then
+          echo "  [cc] $NEW_TOOL"
+          LAST_TOOL="$NEW_TOOL"
+        fi
       fi
     fi
     sleep 2

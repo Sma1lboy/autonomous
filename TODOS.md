@@ -41,6 +41,7 @@
 
 ## Completed (v0.7)
 - [x] discover.sh: scan more file types for TODOs (`.tsx`, `.jsx`, `.cpp`, `.c`, `.md`, `.h`, `.hpp`)
+- [x] Improve live progress — use tail/offset instead of re-parsing full stream file
 
 ## Open
-- [ ] Improve live progress — use tail/offset instead of re-parsing full stream file
+_(no open items — suggest new improvements or report bugs)_
