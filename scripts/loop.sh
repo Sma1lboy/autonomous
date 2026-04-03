@@ -203,7 +203,15 @@ verify_result() {
         echo "pass:$cost:committed"
         return 0
       else
-        # Tests fail — reset
+        # Tests fail — log what will be discarded, then reset
+        echo "[verify] Tests failed — discarding changes:" >&2
+        git -C "$PROJECT_DIR" diff --stat HEAD 2>/dev/null >&2
+        local untracked
+        untracked=$(git -C "$PROJECT_DIR" ls-files --others --exclude-standard 2>/dev/null)
+        if [ -n "$untracked" ]; then
+          echo "[verify] Untracked files to be removed:" >&2
+          echo "$untracked" | sed 's/^/  /' >&2
+        fi
         git -C "$PROJECT_DIR" checkout -- . 2>/dev/null
         git -C "$PROJECT_DIR" clean -fd >/dev/null 2>&1
         echo "fail:$cost:tests failed"
