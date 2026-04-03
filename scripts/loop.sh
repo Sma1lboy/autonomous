@@ -509,8 +509,14 @@ echo "════════════════════════�
 echo "  Session complete"
 echo "═══════════════════════════════════════════════════"
 
-# Handle any uncommitted changes
+# Handle any uncommitted changes (tracked modifications OR untracked files)
+HAS_UNCOMMITTED=0
 if ! git -C "$PROJECT_DIR" diff --quiet 2>/dev/null; then
+  HAS_UNCOMMITTED=1
+elif [ -n "$(git -C "$PROJECT_DIR" status --porcelain 2>/dev/null)" ]; then
+  HAS_UNCOMMITTED=1
+fi
+if [ "$HAS_UNCOMMITTED" -eq 1 ]; then
   TEST_CMD=$(detect_test_command "$PROJECT_DIR")
   if [ -n "$TEST_CMD" ] && eval "$TEST_CMD" >/dev/null 2>&1; then
     git -C "$PROJECT_DIR" add -A
