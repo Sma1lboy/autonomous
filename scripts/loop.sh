@@ -162,8 +162,14 @@ verify_result() {
     return 1
   fi
 
-  # Check if there are actual code changes
-  if ! git -C "$PROJECT_DIR" diff --quiet HEAD 2>/dev/null && [ -n "$(git -C "$PROJECT_DIR" diff --name-only HEAD 2>/dev/null)" ]; then
+  # Check if there are actual code changes (tracked modifications OR untracked files)
+  local has_changes=0
+  if ! git -C "$PROJECT_DIR" diff --quiet HEAD 2>/dev/null; then
+    has_changes=1
+  elif [ -n "$(git -C "$PROJECT_DIR" status --porcelain 2>/dev/null)" ]; then
+    has_changes=1
+  fi
+  if [ "$has_changes" -eq 1 ]; then
     # There are changes — run tests if available
     local test_cmd
     test_cmd=$(detect_test_command "$PROJECT_DIR")
