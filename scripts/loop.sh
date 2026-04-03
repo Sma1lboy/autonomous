@@ -105,6 +105,8 @@ mark_task() {
 
 add_cost() {
   local cost="$1"
+  # Truncate to 6 decimal places to avoid floating point edge cases
+  cost=$(echo "$cost" | awk '{printf "%.6f", $1}' 2>/dev/null || echo "0")
   local tmp
   tmp=$(mktemp)
   if ! jq --argjson c "$cost" '.total_cost_usd += $c' "$STATE_FILE" > "$tmp" 2>/dev/null; then
@@ -457,24 +459,59 @@ if ! git -C "$PROJECT_DIR" diff --quiet 2>/dev/null; then
   fi
 fi
 
-# Write summary
-TOTAL_COST=$(jq -r '.total_cost_usd' "$STATE_FILE")
-COMPLETED_COUNT=$(jq -r '.completed | length' "$STATE_FILE")
-SKIPPED_COUNT=$(jq -r '.skipped | length' "$STATE_FILE")
+# ─── Metrics ────────────────────────────────────────────────────────
+SESSION_END=$(date +%s)
+SESSION_DURATION=$(( SESSION_END - SESSION_ID ))
+TOTAL_COST=$(jq -r '.total_cost_usd // 0' "$STATE_FILE" 2>/dev/null || echo 0)
+COMPLETED_COUNT=$(jq -r '.completed | length' "$STATE_FILE" 2>/dev/null || echo 0)
+SKIPPED_COUNT=$(jq -r '.skipped | length' "$STATE_FILE" 2>/dev/null || echo 0)
 COMMIT_COUNT=$(git -C "$PROJECT_DIR" rev-list --count "$MAIN_BRANCH..$SESSION_BRANCH" 2>/dev/null || echo 0)
+PENDING_COUNT=$(jq -r '[.tasks[] | select(.status == "pending")] | length' "$STATE_FILE" 2>/dev/null || echo 0)
+LINES_CHANGED=$(git -C "$PROJECT_DIR" diff --stat "$MAIN_BRANCH..$SESSION_BRANCH" 2>/dev/null | tail -1 | grep -oE '[0-9]+ insertion|[0-9]+ deletion' | paste -sd', ' || echo "0")
 
-log_event "session_end" "iterations=$ITERATION, completed=$COMPLETED_COUNT, skipped=$SKIPPED_COUNT, commits=$COMMIT_COUNT, cost=\$$TOTAL_COST"
+# Human-readable duration
+if [ "$SESSION_DURATION" -ge 3600 ]; then
+  DURATION_FMT="$((SESSION_DURATION / 3600))h $((SESSION_DURATION % 3600 / 60))m"
+elif [ "$SESSION_DURATION" -ge 60 ]; then
+  DURATION_FMT="$((SESSION_DURATION / 60))m $((SESSION_DURATION % 60))s"
+else
+  DURATION_FMT="${SESSION_DURATION}s"
+fi
+
+# Average time per iteration
+if [ "$ITERATION" -gt 0 ]; then
+  AVG_TIME=$(( SESSION_DURATION / ITERATION ))
+  AVG_COST=$(echo "$TOTAL_COST $ITERATION" | awk '{printf "%.4f", $1/$2}')
+else
+  AVG_TIME=0
+  AVG_COST="0"
+fi
+
+log_event "session_end" "iterations=$ITERATION, completed=$COMPLETED_COUNT, skipped=$SKIPPED_COUNT, commits=$COMMIT_COUNT, cost=\$$TOTAL_COST, duration=${SESSION_DURATION}s"
 
 echo ""
-echo "Results:"
-if [ "$MAX_ITERATIONS" -eq 0 ] 2>/dev/null; then echo "  Iterations:  $ITERATION (unlimited)"; else echo "  Iterations:  $ITERATION / $MAX_ITERATIONS"; fi
-echo "  Completed:   $COMPLETED_COUNT tasks"
-echo "  Skipped:     $SKIPPED_COUNT tasks (3-strike rule)"
-echo "  Commits:     $COMMIT_COUNT on $SESSION_BRANCH"
-echo "  Total cost:  \$$TOTAL_COST"
+echo "═══════════════════════════════════════════════════"
+echo "  SESSION METRICS"
+echo "═══════════════════════════════════════════════════"
 echo ""
-echo "Review: git log $MAIN_BRANCH..$SESSION_BRANCH --oneline"
-echo "Merge:  git checkout $MAIN_BRANCH && git merge $SESSION_BRANCH"
+echo "  Duration:        $DURATION_FMT"
+echo "  Iterations:      $ITERATION$([ "$MAX_ITERATIONS" -eq 0 ] 2>/dev/null && echo ' (unlimited)' || echo " / $MAX_ITERATIONS")"
+echo "  Avg per iter:    ${AVG_TIME}s"
+echo ""
+echo "  Tasks completed: $COMPLETED_COUNT"
+echo "  Tasks skipped:   $SKIPPED_COUNT (3-strike rule)"
+echo "  Tasks pending:   $PENDING_COUNT"
+echo ""
+echo "  Commits:         $COMMIT_COUNT on $SESSION_BRANCH"
+echo "  Lines changed:   $LINES_CHANGED"
+echo ""
+echo "  Total cost:      \$$TOTAL_COST"
+echo "  Avg cost/iter:   \$$AVG_COST"
+echo ""
+echo "───────────────────────────────────────────────────"
+echo "  Review: git log $MAIN_BRANCH..$SESSION_BRANCH --oneline"
+echo "  Merge:  git checkout $MAIN_BRANCH && git merge $SESSION_BRANCH"
+echo "───────────────────────────────────────────────────"
 
 # Return to main branch
 git -C "$PROJECT_DIR" checkout "$MAIN_BRANCH" 2>/dev/null
