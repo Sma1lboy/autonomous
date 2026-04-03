@@ -23,5 +23,5 @@
 - [ ] Add session cost budget (`MAX_COST_USD` env var) to loop.sh
 - [ ] Implement `scripts/report.sh` — parse autonomous-log.jsonl into summary
 - [x] Competitive analysis — COMPETITIVE.md comparing SWE-agent, Devin, OpenHands
-- [ ] Improve README.md — architecture diagram, usage examples, quickstart
+- [x] Improve README.md — architecture diagram, usage examples, quickstart
 - [ ] Add test harness — mock CC responses for loop.sh integration tests

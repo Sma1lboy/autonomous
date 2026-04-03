@@ -4,7 +4,6 @@ Project board for autonomous-skill. Updated by the autonomous agent and maintain
 
 ## Todo
 
-- [ ] Improve README.md — architecture diagram, usage examples, quickstart
 - [ ] Add `--dry-run` flag to loop.sh — show what would happen without spawning CC
 - [ ] Add session cost budget (`MAX_COST_USD` env var) to loop.sh
 - [ ] Implement `scripts/report.sh` — parse autonomous-log.jsonl into human-readable summary
@@ -26,3 +25,4 @@ _(nothing in progress)_
 - [x] Task discovery from TODOS.md, code TODOs, GitHub issues
 - [x] Support KANBAN.md as a task source in discover.sh
 - [x] Competitive analysis — COMPETITIVE.md (SWE-agent, Devin, OpenHands, Open SWE)
+- [x] Improve README.md — architecture diagram, usage examples, quickstart
