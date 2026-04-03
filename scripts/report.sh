@@ -62,11 +62,15 @@ SESSIONS=$(echo "$ENTRIES" | jq -s '
       capture("commits=(?<n>[0-9]+)") | .n | tonumber] | first // 0),
     duration_s: ([.[] | select(.event == "session_end") | .detail // "" |
       capture("duration=(?<n>[0-9]+)s") | .n | tonumber] | first // null),
-    successes: [.[] | select(.event == "success")] | length,
+    successes: [.[] | select(.event == "success" or .event == "parallel_done")] | length,
     failures: [.[] | select(.event == "failure")] | length,
     timeouts: [.[] | select(.event == "timeout")] | length,
-    no_changes: [.[] | select(.event == "no_change")] | length,
+    no_changes: [.[] | select(.event == "no_change" or .event == "parallel_empty")] | length,
     budget_hit: ([.[] | select(.event == "budget_exceeded")] | length > 0),
+    parallel_workers: [.[] | select(.event | startswith("parallel_"))] | length,
+    parallel_worker_ok: [.[] | select(.event == "parallel_success")] | length,
+    parallel_worker_timeout: [.[] | select(.event == "parallel_timeout")] | length,
+    parallel_conflicts: [.[] | select(.event == "parallel_conflict")] | length,
     events: [.[].event]
   })
 ')
@@ -83,6 +87,9 @@ TOTALS=$(echo "$SESSIONS" | jq '{
   total_no_changes: ([.[].no_changes] | add // 0),
   total_duration_s: ([.[].duration_s | select(. != null)] | add // 0),
   budget_hits: ([.[] | select(.budget_hit)] | length),
+  parallel_worker_ok: ([.[].parallel_worker_ok] | add // 0),
+  parallel_worker_timeout: ([.[].parallel_worker_timeout] | add // 0),
+  parallel_conflicts: ([.[].parallel_conflicts] | add // 0),
   avg_cost_per_iter: (if ([.[].iterations] | add // 0) > 0
     then (([.[].total_cost] | add // 0) / ([.[].iterations] | add) * 10000 | round / 10000)
     else 0 end),
@@ -175,6 +182,20 @@ echo "  ${C_DIM}Cost/commit:${C_RESET}    ${C_CYAN}\$$COST_PER_COMMIT${C_RESET}"
 echo "  ${C_DIM}Cost/iter:${C_RESET}      ${C_CYAN}\$$COST_PER_ITER${C_RESET}"
 echo "  ${C_DIM}Timeouts:${C_RESET}       $TOTAL_TIMEOUTS"
 echo "  ${C_DIM}Budget stops:${C_RESET}   $BUDGET_HITS"
+
+# Parallel worker stats (only show if parallel mode was used)
+PAR_WORKER_OK=$(echo "$TOTALS" | jq -r '.parallel_worker_ok // 0')
+PAR_WORKER_TMO=$(echo "$TOTALS" | jq -r '.parallel_worker_timeout // 0')
+PAR_CONFLICTS=$(echo "$TOTALS" | jq -r '.parallel_conflicts // 0')
+PAR_TOTAL=$((PAR_WORKER_OK + PAR_WORKER_TMO + PAR_CONFLICTS))
+
+if [ "$PAR_TOTAL" -gt 0 ]; then
+  echo ""
+  echo "${C_BOLD}─── Parallel Workers ───────────────────────────────${C_RESET}"
+  echo "  ${C_DIM}Workers ok:${C_RESET}     ${C_GREEN}$PAR_WORKER_OK${C_RESET}"
+  echo "  ${C_DIM}Workers tmo:${C_RESET}    ${C_YELLOW}$PAR_WORKER_TMO${C_RESET}"
+  echo "  ${C_DIM}Conflicts:${C_RESET}      ${C_RED}$PAR_CONFLICTS${C_RESET}"
+fi
 echo ""
 
 # ─── Per-session table ────────────────────────────────────────────

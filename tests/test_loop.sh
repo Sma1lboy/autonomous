@@ -460,6 +460,166 @@ rm -rf "$DATA_DIR"
 cleanup_repo "$REPO"
 echo ""
 
+# ─── Test: report.sh with parallel events ────────────────────────
+echo "── test_report_parallel_events ──"
+REPO=$(setup_repo)
+SLUG=$(basename "$REPO")
+DATA_DIR="$HOME/.autonomous-skill/projects/$SLUG"
+mkdir -p "$DATA_DIR"
+
+# Write synthetic log with parallel events
+cat > "$DATA_DIR/autonomous-log.jsonl" << 'EOF'
+{"ts":"2025-01-01T00:00:00Z","session":"200","iteration":0,"event":"session_start","cost_usd":0,"detail":"branch=auto/session-200"}
+{"ts":"2025-01-01T00:01:00Z","session":"200","iteration":1,"event":"parallel_success","cost_usd":0.15,"detail":"worker=0, commits=1, task=Fix widget"}
+{"ts":"2025-01-01T00:01:00Z","session":"200","iteration":1,"event":"parallel_success","cost_usd":0.12,"detail":"worker=1, commits=1, task=Add tests"}
+{"ts":"2025-01-01T00:01:00Z","session":"200","iteration":1,"event":"parallel_timeout","cost_usd":0.05,"detail":"worker=2, task=Refactor"}
+{"ts":"2025-01-01T00:01:30Z","session":"200","iteration":1,"event":"parallel_done","cost_usd":0.32,"detail":"commits=2, workers=3, elapsed=90s"}
+{"ts":"2025-01-01T00:03:00Z","session":"200","iteration":2,"event":"parallel_no_change","cost_usd":0.08,"detail":"worker=0, task=Polish docs"}
+{"ts":"2025-01-01T00:03:30Z","session":"200","iteration":2,"event":"parallel_empty","cost_usd":0.08,"detail":"workers=1, elapsed=30s"}
+{"ts":"2025-01-01T00:03:30Z","session":"200","iteration":2,"event":"parallel_conflict","cost_usd":0,"detail":"worker=0, commit=abc123"}
+{"ts":"2025-01-01T00:04:00Z","session":"200","iteration":2,"event":"session_end","cost_usd":0,"detail":"iterations=2, commits=2, duration=240s"}
+EOF
+
+# JSON report — verify parallel events are aggregated
+JSON_OUTPUT=$("$PROJECT_ROOT/scripts/report.sh" "$REPO" --json 2>&1)
+
+# parallel_done should count as a success
+TESTS_RUN=$((TESTS_RUN + 1))
+JSON_SUCCESSES=$(echo "$JSON_OUTPUT" | jq '.sessions[0].successes' 2>/dev/null)
+if [ "$JSON_SUCCESSES" = "1" ]; then
+  pass "report: parallel_done counted as success"
+else
+  fail "report: parallel_done not counted as success (got $JSON_SUCCESSES, expected 1)"
+fi
+
+# parallel_empty should count as no_change
+TESTS_RUN=$((TESTS_RUN + 1))
+JSON_NO_CHANGES=$(echo "$JSON_OUTPUT" | jq '.sessions[0].no_changes' 2>/dev/null)
+if [ "$JSON_NO_CHANGES" = "1" ]; then
+  pass "report: parallel_empty counted as no_change"
+else
+  fail "report: parallel_empty not counted as no_change (got $JSON_NO_CHANGES, expected 1)"
+fi
+
+# parallel worker stats
+TESTS_RUN=$((TESTS_RUN + 1))
+JSON_PAR_OK=$(echo "$JSON_OUTPUT" | jq '.sessions[0].parallel_worker_ok' 2>/dev/null)
+if [ "$JSON_PAR_OK" = "2" ]; then
+  pass "report: parallel_worker_ok = 2"
+else
+  fail "report: parallel_worker_ok (got $JSON_PAR_OK, expected 2)"
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+JSON_PAR_TMO=$(echo "$JSON_OUTPUT" | jq '.sessions[0].parallel_worker_timeout' 2>/dev/null)
+if [ "$JSON_PAR_TMO" = "1" ]; then
+  pass "report: parallel_worker_timeout = 1"
+else
+  fail "report: parallel_worker_timeout (got $JSON_PAR_TMO, expected 1)"
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+JSON_PAR_CONF=$(echo "$JSON_OUTPUT" | jq '.sessions[0].parallel_conflicts' 2>/dev/null)
+if [ "$JSON_PAR_CONF" = "1" ]; then
+  pass "report: parallel_conflicts = 1"
+else
+  fail "report: parallel_conflicts (got $JSON_PAR_CONF, expected 1)"
+fi
+
+# Totals should aggregate parallel stats
+TESTS_RUN=$((TESTS_RUN + 1))
+JSON_TOTAL_PAR_OK=$(echo "$JSON_OUTPUT" | jq '.totals.parallel_worker_ok' 2>/dev/null)
+if [ "$JSON_TOTAL_PAR_OK" = "2" ]; then
+  pass "report: totals.parallel_worker_ok = 2"
+else
+  fail "report: totals.parallel_worker_ok (got $JSON_TOTAL_PAR_OK, expected 2)"
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+JSON_TOTAL_PAR_TMO=$(echo "$JSON_OUTPUT" | jq '.totals.parallel_worker_timeout' 2>/dev/null)
+if [ "$JSON_TOTAL_PAR_TMO" = "1" ]; then
+  pass "report: totals.parallel_worker_timeout = 1"
+else
+  fail "report: totals.parallel_worker_timeout (got $JSON_TOTAL_PAR_TMO, expected 1)"
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+JSON_TOTAL_CONFLICTS=$(echo "$JSON_OUTPUT" | jq '.totals.parallel_conflicts' 2>/dev/null)
+if [ "$JSON_TOTAL_CONFLICTS" = "1" ]; then
+  pass "report: totals.parallel_conflicts = 1"
+else
+  fail "report: totals.parallel_conflicts (got $JSON_TOTAL_CONFLICTS, expected 1)"
+fi
+
+# Human-readable report should show parallel workers section
+OUTPUT=$("$PROJECT_ROOT/scripts/report.sh" "$REPO" 2>&1)
+assert_contains "$OUTPUT" "Parallel Workers" "report: shows parallel workers section"
+assert_contains "$OUTPUT" "Workers ok:" "report: shows workers ok count"
+assert_contains "$OUTPUT" "Conflicts:" "report: shows conflicts count"
+
+rm -rf "$DATA_DIR"
+cleanup_repo "$REPO"
+echo ""
+
+# ─── Test: report.sh parallel events in mixed session ────────────
+echo "── test_report_mixed_serial_parallel ──"
+REPO=$(setup_repo)
+SLUG=$(basename "$REPO")
+DATA_DIR="$HOME/.autonomous-skill/projects/$SLUG"
+mkdir -p "$DATA_DIR"
+
+# Session with both serial and parallel iterations
+cat > "$DATA_DIR/autonomous-log.jsonl" << 'EOF'
+{"ts":"2025-01-02T00:00:00Z","session":"300","iteration":0,"event":"session_start","cost_usd":0,"detail":"branch=auto/session-300"}
+{"ts":"2025-01-02T00:01:00Z","session":"300","iteration":1,"event":"success","cost_usd":0.20,"detail":"commits=1, elapsed=60s"}
+{"ts":"2025-01-02T00:02:00Z","session":"300","iteration":2,"event":"parallel_done","cost_usd":0.30,"detail":"commits=2, workers=2, elapsed=90s"}
+{"ts":"2025-01-02T00:03:00Z","session":"300","iteration":3,"event":"no_change","cost_usd":0.10,"detail":"elapsed=30s"}
+{"ts":"2025-01-02T00:04:00Z","session":"300","iteration":3,"event":"session_end","cost_usd":0,"detail":"iterations=3, commits=3, duration=240s"}
+EOF
+
+JSON_OUTPUT=$("$PROJECT_ROOT/scripts/report.sh" "$REPO" --json 2>&1)
+
+# Both serial success and parallel_done should count
+TESTS_RUN=$((TESTS_RUN + 1))
+JSON_SUCCESSES=$(echo "$JSON_OUTPUT" | jq '.sessions[0].successes' 2>/dev/null)
+if [ "$JSON_SUCCESSES" = "2" ]; then
+  pass "report: mixed session counts 2 successes (serial + parallel)"
+else
+  fail "report: mixed session successes (got $JSON_SUCCESSES, expected 2)"
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+JSON_NO_CHANGES=$(echo "$JSON_OUTPUT" | jq '.sessions[0].no_changes' 2>/dev/null)
+if [ "$JSON_NO_CHANGES" = "1" ]; then
+  pass "report: mixed session counts 1 no_change"
+else
+  fail "report: mixed session no_changes (got $JSON_NO_CHANGES, expected 1)"
+fi
+
+rm -rf "$DATA_DIR"
+cleanup_repo "$REPO"
+echo ""
+
+# ─── Test: report.sh no parallel section when no parallel events ──
+echo "── test_report_no_parallel_section_when_serial_only ──"
+REPO=$(setup_repo)
+SLUG=$(basename "$REPO")
+DATA_DIR="$HOME/.autonomous-skill/projects/$SLUG"
+mkdir -p "$DATA_DIR"
+
+cat > "$DATA_DIR/autonomous-log.jsonl" << 'EOF'
+{"ts":"2025-01-03T00:00:00Z","session":"400","iteration":0,"event":"session_start","cost_usd":0,"detail":"branch=auto/session-400"}
+{"ts":"2025-01-03T00:01:00Z","session":"400","iteration":1,"event":"success","cost_usd":0.20,"detail":"commits=1, elapsed=60s"}
+{"ts":"2025-01-03T00:02:00Z","session":"400","iteration":1,"event":"session_end","cost_usd":0,"detail":"iterations=1, commits=1, duration=60s"}
+EOF
+
+OUTPUT=$("$PROJECT_ROOT/scripts/report.sh" "$REPO" 2>&1)
+assert_not_contains "$OUTPUT" "Parallel Workers" "report: no parallel section in serial-only session"
+
+rm -rf "$DATA_DIR"
+cleanup_repo "$REPO"
+echo ""
+
 # ─── Test 11: --max-iterations CLI flag ──────────────────────────
 echo "── test_max_iterations_flag ──"
 REPO=$(setup_repo)
@@ -1185,6 +1345,416 @@ else
 fi
 
 rm -rf "$CDATA_DIR"
+cleanup_repo "$REPO"
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════
+# PARALLEL MODE TESTS (parallel.sh + --parallel flag)
+# ═══════════════════════════════════════════════════════════════════
+
+PARALLEL_SCRIPT="$PROJECT_ROOT/scripts/parallel.sh"
+
+# ─── Test: parallel.sh — no tasks produces empty result ──────────
+echo "── test_parallel_no_tasks ──"
+REPO=$(setup_repo)
+
+# Mock discover.sh that returns empty array
+MOCK_DISCOVER=$(mktemp /tmp/autonomous-mock-discover-XXXXXXXX)
+echo '#!/usr/bin/env bash' > "$MOCK_DISCOVER"
+echo 'echo "[]"' >> "$MOCK_DISCOVER"
+chmod +x "$MOCK_DISCOVER"
+
+SESSION_BR="auto/session-test-par0"
+git -C "$REPO" checkout -b "$SESSION_BR" --quiet 2>/dev/null
+
+OUTPUT=$(cd "$REPO" && \
+  PATH="$SCRIPT_DIR:$PATH" \
+  DISCOVER_CMD="$MOCK_DISCOVER" \
+  LOG_FILE="/dev/null" SESSION_ID="0" \
+  bash "$PARALLEL_SCRIPT" "$REPO" "$SESSION_BR" 2 2>&1)
+rm -f "$MOCK_DISCOVER"
+
+# Last line should be JSON with 0 workers
+JSON_LINE=$(echo "$OUTPUT" | tail -1)
+assert_contains "$JSON_LINE" '"workers":0' "parallel: no tasks → workers=0"
+assert_contains "$JSON_LINE" '"commits":0' "parallel: no tasks → commits=0"
+
+cleanup_repo "$REPO"
+echo ""
+
+# ─── Test: parallel.sh — missing session branch errors ───────────
+echo "── test_parallel_missing_branch ──"
+REPO=$(setup_repo)
+
+OUTPUT=$(cd "$REPO" && \
+  PATH="$SCRIPT_DIR:$PATH" \
+  LOG_FILE="/dev/null" SESSION_ID="0" \
+  bash "$PARALLEL_SCRIPT" "$REPO" "" 2 2>&1)
+
+assert_contains "$OUTPUT" "ERROR.*session branch" "parallel: empty branch → error"
+
+cleanup_repo "$REPO"
+echo ""
+
+# ─── Test: parallel.sh — 2 workers, both commit ─────────────────
+echo "── test_parallel_two_workers_commit ──"
+REPO=$(setup_repo)
+# Need 2 tasks so 2 workers get assigned
+cat > "$REPO/TODOS.md" << 'TODOEOF'
+# TODOS
+- [ ] Fix the widget
+- [ ] Add unit tests
+TODOEOF
+git -C "$REPO" add TODOS.md
+git -C "$REPO" commit -m "add second todo" --no-gpg-sign --quiet 2>/dev/null
+
+SESSION_BR="auto/session-test-par2"
+git -C "$REPO" checkout -b "$SESSION_BR" --quiet 2>/dev/null
+
+OUTPUT=$(cd "$REPO" && \
+  MOCK_CLAUDE_COMMIT=1 \
+  MOCK_CLAUDE_COST=0.15 \
+  PATH="$SCRIPT_DIR:$PATH" \
+  LOG_FILE="/dev/null" SESSION_ID="0" ITERATION=1 MAX_ITERATIONS=5 \
+  bash "$PARALLEL_SCRIPT" "$REPO" "$SESSION_BR" 2 2>&1)
+
+JSON_LINE=$(echo "$OUTPUT" | tail -1)
+
+# Should have merged commits
+assert_contains "$OUTPUT" "Spawning 2 workers" "parallel: spawns 2 workers"
+assert_contains "$OUTPUT" "Merging results" "parallel: merges results"
+assert_contains "$JSON_LINE" '"workers":2' "parallel: JSON reports 2 workers"
+
+# Validate JSON output
+TESTS_RUN=$((TESTS_RUN + 1))
+if echo "$JSON_LINE" | jq -e '.commits >= 1' >/dev/null 2>&1; then
+  pass "parallel: at least 1 commit merged"
+else
+  fail "parallel: expected commits >= 1 in JSON: $JSON_LINE"
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+if echo "$JSON_LINE" | jq -e '.total_cost > 0' >/dev/null 2>&1; then
+  pass "parallel: total_cost > 0"
+else
+  fail "parallel: expected total_cost > 0 in JSON: $JSON_LINE"
+fi
+
+# Verify commits were cherry-picked onto session branch
+TESTS_RUN=$((TESTS_RUN + 1))
+COMMIT_COUNT=$(git -C "$REPO" rev-list --count main.."$SESSION_BR" 2>/dev/null || echo 0)
+if [ "$COMMIT_COUNT" -ge 1 ]; then
+  pass "parallel: commits cherry-picked to session branch ($COMMIT_COUNT)"
+else
+  fail "parallel: no commits on session branch after parallel run"
+fi
+
+cleanup_repo "$REPO"
+echo ""
+
+# ─── Test: parallel.sh — worker with no commits ─────────────────
+echo "── test_parallel_no_commit_worker ──"
+REPO=$(setup_repo)
+SESSION_BR="auto/session-test-parnc"
+git -C "$REPO" checkout -b "$SESSION_BR" --quiet 2>/dev/null
+
+# Mock that does NOT commit (default MOCK_CLAUDE_COMMIT=0)
+OUTPUT=$(cd "$REPO" && \
+  MOCK_CLAUDE_COMMIT=0 \
+  MOCK_CLAUDE_COST=0.08 \
+  PATH="$SCRIPT_DIR:$PATH" \
+  LOG_FILE="/dev/null" SESSION_ID="0" \
+  bash "$PARALLEL_SCRIPT" "$REPO" "$SESSION_BR" 1 2>&1)
+
+JSON_LINE=$(echo "$OUTPUT" | tail -1)
+assert_contains "$JSON_LINE" '"commits":0' "parallel: no-commit worker → 0 merged commits"
+assert_contains "$OUTPUT" "No commits" "parallel: reports no commits"
+
+cleanup_repo "$REPO"
+echo ""
+
+# ─── Test: parallel.sh — caps workers to task count ──────────────
+echo "── test_parallel_caps_workers ──"
+REPO=$(setup_repo)
+# TODOS.md has exactly 1 open task ("Fix the widget")
+SESSION_BR="auto/session-test-parcap"
+git -C "$REPO" checkout -b "$SESSION_BR" --quiet 2>/dev/null
+
+OUTPUT=$(cd "$REPO" && \
+  MOCK_CLAUDE_COMMIT=1 \
+  MOCK_CLAUDE_REPO="\$PWD" \
+  MOCK_CLAUDE_COST=0.05 \
+  PATH="$SCRIPT_DIR:$PATH" \
+  LOG_FILE="/dev/null" SESSION_ID="0" \
+  bash "$PARALLEL_SCRIPT" "$REPO" "$SESSION_BR" 5 2>&1)
+
+# Should cap to 1 worker (only 1 task available)
+assert_contains "$OUTPUT" "Spawning 1 workers" "parallel: caps workers to task count"
+
+cleanup_repo "$REPO"
+echo ""
+
+# ─── Test: parallel.sh — JSON output is valid ────────────────────
+echo "── test_parallel_json_valid ──"
+REPO=$(setup_repo)
+SESSION_BR="auto/session-test-parjson"
+git -C "$REPO" checkout -b "$SESSION_BR" --quiet 2>/dev/null
+
+OUTPUT=$(cd "$REPO" && \
+  MOCK_CLAUDE_COMMIT=1 \
+  MOCK_CLAUDE_REPO="\$PWD" \
+  MOCK_CLAUDE_COST=0.20 \
+  PATH="$SCRIPT_DIR:$PATH" \
+  LOG_FILE="/dev/null" SESSION_ID="0" \
+  bash "$PARALLEL_SCRIPT" "$REPO" "$SESSION_BR" 1 2>&1)
+
+JSON_LINE=$(echo "$OUTPUT" | tail -1)
+
+# Validate all required fields
+TESTS_RUN=$((TESTS_RUN + 1))
+if echo "$JSON_LINE" | jq -e 'has("workers") and has("total_cost") and has("commits") and has("results")' >/dev/null 2>&1; then
+  pass "parallel: JSON has all required fields"
+else
+  fail "parallel: JSON missing fields: $JSON_LINE"
+fi
+
+# Validate results array structure
+TESTS_RUN=$((TESTS_RUN + 1))
+if echo "$JSON_LINE" | jq -e '.results | type == "array"' >/dev/null 2>&1; then
+  pass "parallel: results is an array"
+else
+  fail "parallel: results not an array: $JSON_LINE"
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+if echo "$JSON_LINE" | jq -e '.results[0] | has("worker") and has("task") and has("status") and has("commits") and has("cost")' >/dev/null 2>&1; then
+  pass "parallel: result entry has expected fields"
+else
+  fail "parallel: result entry missing fields: $(echo "$JSON_LINE" | jq '.results[0]')"
+fi
+
+cleanup_repo "$REPO"
+echo ""
+
+# ─── Test: parallel.sh — timeout handling ────────────────────────
+echo "── test_parallel_timeout ──"
+REPO=$(setup_repo)
+SESSION_BR="auto/session-test-partmo"
+git -C "$REPO" checkout -b "$SESSION_BR" --quiet 2>/dev/null
+
+OUTPUT=$(cd "$REPO" && \
+  MOCK_CLAUDE_DELAY=10 \
+  MOCK_CLAUDE_COST=0.01 \
+  CC_TIMEOUT=1 \
+  PATH="$SCRIPT_DIR:$PATH" \
+  LOG_FILE="/dev/null" SESSION_ID="0" \
+  bash "$PARALLEL_SCRIPT" "$REPO" "$SESSION_BR" 1 2>&1)
+
+JSON_LINE=$(echo "$OUTPUT" | tail -1)
+assert_contains "$OUTPUT" "TIMEOUT" "parallel: timeout detected"
+assert_contains "$JSON_LINE" '"commits":0' "parallel: timeout → 0 commits"
+
+# Check result status is "timeout"
+TESTS_RUN=$((TESTS_RUN + 1))
+if echo "$JSON_LINE" | jq -e '.results[0].status == "timeout"' >/dev/null 2>&1; then
+  pass "parallel: timeout status in results"
+else
+  fail "parallel: expected timeout status in results: $JSON_LINE"
+fi
+
+cleanup_repo "$REPO"
+echo ""
+
+# ─── Test: parallel.sh — worktrees cleaned up after run ──────────
+echo "── test_parallel_worktree_cleanup ──"
+REPO=$(setup_repo)
+SESSION_BR="auto/session-test-parclean"
+git -C "$REPO" checkout -b "$SESSION_BR" --quiet 2>/dev/null
+
+OUTPUT=$(cd "$REPO" && \
+  MOCK_CLAUDE_COMMIT=1 \
+  MOCK_CLAUDE_COST=0.05 \
+  PATH="$SCRIPT_DIR:$PATH" \
+  LOG_FILE="/dev/null" SESSION_ID="0" \
+  bash "$PARALLEL_SCRIPT" "$REPO" "$SESSION_BR" 1 2>&1)
+
+# After parallel run, no dangling worktrees should exist
+TESTS_RUN=$((TESTS_RUN + 1))
+WT_COUNT=$(git -C "$REPO" worktree list 2>/dev/null | wc -l | tr -d ' ')
+if [ "$WT_COUNT" -le 1 ]; then
+  pass "parallel: worktrees cleaned up (count=$WT_COUNT)"
+else
+  fail "parallel: dangling worktrees found (count=$WT_COUNT)"
+fi
+
+cleanup_repo "$REPO"
+echo ""
+
+# ─── Test: parallel.sh — log events written ──────────────────────
+echo "── test_parallel_log_events ──"
+REPO=$(setup_repo)
+SESSION_BR="auto/session-test-parlog"
+git -C "$REPO" checkout -b "$SESSION_BR" --quiet 2>/dev/null
+
+PAR_LOG=$(mktemp /tmp/autonomous-test-parlog-XXXXXXXX)
+
+OUTPUT=$(cd "$REPO" && \
+  MOCK_CLAUDE_COMMIT=1 \
+  MOCK_CLAUDE_COST=0.12 \
+  PATH="$SCRIPT_DIR:$PATH" \
+  LOG_FILE="$PAR_LOG" SESSION_ID="999" \
+  bash "$PARALLEL_SCRIPT" "$REPO" "$SESSION_BR" 1 2>&1)
+
+# Should have logged a parallel_success event
+TESTS_RUN=$((TESTS_RUN + 1))
+if grep -q "parallel_success" "$PAR_LOG" 2>/dev/null; then
+  pass "parallel: logs parallel_success event"
+else
+  fail "parallel: missing parallel_success in log"
+fi
+
+# Session ID preserved in log
+TESTS_RUN=$((TESTS_RUN + 1))
+if grep -q '"session":"999"' "$PAR_LOG" 2>/dev/null; then
+  pass "parallel: session ID preserved in log"
+else
+  fail "parallel: session ID not in log"
+fi
+
+rm -f "$PAR_LOG"
+cleanup_repo "$REPO"
+echo ""
+
+# ─── Test: loop.sh --parallel flag in dry-run ────────────────────
+echo "── test_loop_parallel_dry_run ──"
+REPO=$(setup_repo)
+OUTPUT=$(cd "$REPO" && bash "$LOOP" --dry-run --parallel 3 "$REPO" 2>&1)
+
+assert_contains "$OUTPUT" "Parallel.*3" "dry-run shows parallel=3"
+
+cleanup_repo "$REPO"
+echo ""
+
+# ─── Test: loop.sh --parallel triggers parallel mode ─────────────
+echo "── test_loop_parallel_integration ──"
+REPO=$(setup_repo)
+
+OUTPUT=$(cd "$REPO" && \
+  MOCK_CLAUDE_COMMIT=1 \
+  MOCK_CLAUDE_REPO="\$PWD" \
+  MOCK_CLAUDE_COST=0.10 \
+  MAX_ITERATIONS=1 \
+  PATH="$SCRIPT_DIR:$PATH" \
+  bash "$LOOP" --parallel 2 "$REPO" 2>&1)
+
+assert_contains "$OUTPUT" "Parallel.*2" "loop: parallel=2 in banner"
+assert_contains "$OUTPUT" "Parallel mode.*2 workers" "loop: dispatches to parallel mode"
+assert_contains "$OUTPUT" "SESSION METRICS" "loop: metrics shown after parallel run"
+assert_contains "$OUTPUT" "Returned to main" "loop: returns to main after parallel run"
+
+cleanup_repo "$REPO"
+echo ""
+
+# ─── Test: config file parallel key ──────────────────────────────
+echo "── test_config_parallel_key ──"
+REPO=$(setup_repo)
+
+cat > "$REPO/.autonomous-skill.yml" << 'CFGEOF'
+parallel: 4
+max_iterations: 1
+CFGEOF
+git -C "$REPO" add .autonomous-skill.yml
+git -C "$REPO" commit -m "add config" --no-gpg-sign --quiet 2>/dev/null
+
+OUTPUT=$(cd "$REPO" && bash "$LOOP" --dry-run "$REPO" 2>&1)
+assert_contains "$OUTPUT" "Parallel.*4" "config: parallel=4 from .autonomous-skill.yml"
+
+cleanup_repo "$REPO"
+echo ""
+
+# ─── Test: --parallel flag overrides config file ─────────────────
+echo "── test_parallel_flag_overrides_config ──"
+REPO=$(setup_repo)
+
+cat > "$REPO/.autonomous-skill.yml" << 'CFGEOF'
+parallel: 4
+max_iterations: 1
+CFGEOF
+git -C "$REPO" add .autonomous-skill.yml
+git -C "$REPO" commit -m "add config" --no-gpg-sign --quiet 2>/dev/null
+
+OUTPUT=$(cd "$REPO" && bash "$LOOP" --dry-run --parallel 2 "$REPO" 2>&1)
+assert_contains "$OUTPUT" "Parallel.*2" "flag overrides config parallel value"
+
+cleanup_repo "$REPO"
+echo ""
+
+# ─── Test: AUTONOMOUS_PARALLEL env var ───────────────────────────
+echo "── test_parallel_env_var ──"
+REPO=$(setup_repo)
+
+OUTPUT=$(cd "$REPO" && AUTONOMOUS_PARALLEL=3 bash "$LOOP" --dry-run "$REPO" 2>&1)
+assert_contains "$OUTPUT" "Parallel.*3" "env var AUTONOMOUS_PARALLEL=3 works"
+
+cleanup_repo "$REPO"
+echo ""
+
+# ─── Test: parallel.sh — multiple tasks, multiple workers ────────
+echo "── test_parallel_multi_task ──"
+REPO=$(setup_repo)
+
+# Add more tasks to TODOS.md
+cat > "$REPO/TODOS.md" << 'TODOEOF'
+# TODOS
+- [ ] Fix the widget
+- [ ] Add error handling to API
+- [ ] Write unit tests for parser
+TODOEOF
+git -C "$REPO" add TODOS.md
+git -C "$REPO" commit -m "add more todos" --no-gpg-sign --quiet 2>/dev/null
+
+SESSION_BR="auto/session-test-parmulti"
+git -C "$REPO" checkout -b "$SESSION_BR" --quiet 2>/dev/null
+
+OUTPUT=$(cd "$REPO" && \
+  MOCK_CLAUDE_COMMIT=1 \
+  MOCK_CLAUDE_COST=0.10 \
+  PATH="$SCRIPT_DIR:$PATH" \
+  LOG_FILE="/dev/null" SESSION_ID="0" \
+  bash "$PARALLEL_SCRIPT" "$REPO" "$SESSION_BR" 3 2>&1)
+
+assert_contains "$OUTPUT" "Spawning 3 workers" "parallel: spawns 3 workers for 3 tasks"
+
+JSON_LINE=$(echo "$OUTPUT" | tail -1)
+TESTS_RUN=$((TESTS_RUN + 1))
+RESULT_COUNT=$(echo "$JSON_LINE" | jq '.results | length' 2>/dev/null || echo 0)
+if [ "$RESULT_COUNT" -eq 3 ]; then
+  pass "parallel: 3 results for 3 workers"
+else
+  fail "parallel: expected 3 results, got $RESULT_COUNT"
+fi
+
+cleanup_repo "$REPO"
+echo ""
+
+# ─── Test: parallel budget check in loop.sh ──────────────────────
+echo "── test_parallel_budget_in_loop ──"
+REPO=$(setup_repo)
+
+# High cost per worker, low budget — should stop after first iteration
+OUTPUT=$(cd "$REPO" && \
+  MOCK_CLAUDE_COMMIT=1 \
+  MOCK_CLAUDE_COST=5.00 \
+  MAX_ITERATIONS=10 \
+  PATH="$SCRIPT_DIR:$PATH" \
+  bash "$LOOP" --parallel 2 --max-cost 2.00 "$REPO" 2>&1)
+
+assert_contains "$OUTPUT" "Budget exceeded" "parallel: budget enforced in loop"
+
+# Should only run 1 iteration
+assert_contains "$OUTPUT" "Iteration 1" "parallel: ran iteration 1"
+assert_not_contains "$OUTPUT" "Iteration 2" "parallel: did not run iteration 2"
+
 cleanup_repo "$REPO"
 echo ""
 

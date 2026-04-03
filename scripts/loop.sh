@@ -28,6 +28,8 @@ Options:
   --max-cost N             Session cost budget in USD (default: unlimited)
   --direction TEXT         Focus prompt — tells the agent what to work on
   --timeout N              Seconds per CC invocation (default: 900)
+  --parallel N             Run N tasks concurrently per iteration using
+                           git worktrees (default: 1 = serial mode)
   --help                   Show this help message
 
 Config file:
@@ -35,6 +37,7 @@ Config file:
     max_iterations: 10
     max_cost: 5.00
     timeout: 600
+    parallel: 3
     direction: Fix all security bugs
 
   Priority: CLI flags > env vars > config file > defaults
@@ -44,6 +47,7 @@ Environment variables:
   MAX_COST_USD             Same as --max-cost (flag takes precedence)
   CC_TIMEOUT               Same as --timeout (flag takes precedence)
   AUTONOMOUS_DIRECTION     Same as --direction (flag takes precedence)
+  AUTONOMOUS_PARALLEL      Same as --parallel (flag takes precedence)
   AUTONOMOUS_SKILL_HOME    Data directory (default: ~/.autonomous-skill)
 
 Safety:
@@ -60,6 +64,7 @@ Examples:
   loop.sh --max-cost 2.00              # stop after $2 spent
   loop.sh --direction "fix all linting errors" ./repo
   loop.sh --timeout 600 --max-iterations 10 ./repo
+  loop.sh --parallel 3                 # run 3 tasks concurrently per iteration
   loop.sh --resume                     # continue most recent session
   loop.sh --resume auto/session-12345  # continue specific session
   loop.sh --status                     # check session status
@@ -77,6 +82,7 @@ MAX_COST_ARG=""
 MAX_ITER_ARG=""
 DIRECTION_ARG=""
 TIMEOUT_ARG=""
+PARALLEL_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --help|-h) usage ;;
@@ -111,6 +117,8 @@ while [ $# -gt 0 ]; do
     --direction=*) DIRECTION_ARG="${1#*=}"; shift ;;
     --timeout) TIMEOUT_ARG="$2"; shift 2 ;;
     --timeout=*) TIMEOUT_ARG="${1#*=}"; shift ;;
+    --parallel) PARALLEL_ARG="$2"; shift 2 ;;
+    --parallel=*) PARALLEL_ARG="${1#*=}"; shift ;;
     -*) echo "[loop] ERROR: unknown flag: $1" >&2; echo "Run 'loop.sh --help' for usage." >&2; exit 1 ;;
     *) PROJECT_DIR="$1"; shift ;;
   esac
@@ -132,12 +140,14 @@ CONFIG_FILE="$PROJECT_DIR/.autonomous-skill.yml"
 CFG_MAX_ITER=$(read_config "$CONFIG_FILE" "max_iterations" 2>/dev/null || true)
 CFG_TIMEOUT=$(read_config "$CONFIG_FILE" "timeout" 2>/dev/null || true)
 CFG_MAX_COST=$(read_config "$CONFIG_FILE" "max_cost" 2>/dev/null || true)
+CFG_PARALLEL=$(read_config "$CONFIG_FILE" "parallel" 2>/dev/null || true)
 CFG_DIRECTION=$(read_config "$CONFIG_FILE" "direction" 2>/dev/null || true)
 
 # Priority: CLI flag > env var > config file > default
 MAX_ITERATIONS="${MAX_ITER_ARG:-${MAX_ITERATIONS:-${CFG_MAX_ITER:-50}}}"  # 0 = unlimited
 CC_TIMEOUT="${TIMEOUT_ARG:-${CC_TIMEOUT:-${CFG_TIMEOUT:-900}}}"
 MAX_COST_USD="${MAX_COST_ARG:-${MAX_COST_USD:-${CFG_MAX_COST:-0}}}"  # 0 = unlimited
+PARALLEL="${PARALLEL_ARG:-${AUTONOMOUS_PARALLEL:-${CFG_PARALLEL:-1}}}"
 DIRECTION="${DIRECTION_ARG:-${AUTONOMOUS_DIRECTION:-${CFG_DIRECTION:-}}}"
 
 # Paths
@@ -277,6 +287,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
   [ "$MAX_ITERATIONS" -eq 0 ] 2>/dev/null && echo "  Iterations: unlimited" || echo "  Iterations: $MAX_ITERATIONS"
   echo "  Timeout: ${CC_TIMEOUT}s per iteration"
   echo "$MAX_COST_USD" | grep -qE '^0(\.0+)?$' && echo "  Budget: unlimited" || echo "  Budget: \$$MAX_COST_USD"
+  [ "$PARALLEL" -gt 1 ] 2>/dev/null && echo "  Parallel: $PARALLEL workers per iteration"
   if [ -n "$RESUME_BRANCH" ]; then
     # Resolve __latest__ for display
     DISPLAY_BRANCH="$RESUME_BRANCH"
@@ -357,6 +368,7 @@ echo "  Project: $(basename "$PROJECT_DIR")"
 [ "$MAX_ITERATIONS" -eq 0 ] 2>/dev/null && echo "  Iterations: unlimited" || echo "  Iterations: $MAX_ITERATIONS"
 echo "  Timeout: ${CC_TIMEOUT}s per iteration"
 echo "$MAX_COST_USD" | grep -qE '^0(\.0+)?$' && echo "  Budget: unlimited" || echo "  Budget: \$$MAX_COST_USD"
+[ "$PARALLEL" -gt 1 ] 2>/dev/null && echo "  Parallel: $PARALLEL workers per iteration"
 echo "  Branch: $SESSION_BRANCH"
 [ -f "$CONFIG_FILE" ] && echo "  Config: .autonomous-skill.yml"
 echo "═══════════════════════════════════════════════════"
@@ -379,88 +391,126 @@ while [ "$MAX_ITERATIONS" -eq 0 ] 2>/dev/null || [ "$ITERATION" -lt "$MAX_ITERAT
 
   # Snapshot HEAD
   HEAD_BEFORE=$(git -C "$PROJECT_DIR" rev-parse HEAD 2>/dev/null)
-
-  # Build prompt
-  TASK_PROMPT=$(build_prompt "$ITERATION" "$MAX_ITERATIONS")
-
-  # Build CC args
-  CC_ARGS=(-p "$TASK_PROMPT" --dangerously-skip-permissions --output-format stream-json --verbose)
-  [ -n "$OWNER_CONTENT" ] && CC_ARGS+=(--append-system-prompt "$OWNER_CONTENT")
-
-  # Spawn CC
-  echo "[loop] CC running..."
   CC_START=$(date +%s)
-  CC_STREAM_FILE=$(mktemp /tmp/autonomous-cc-XXXXXXXX)
-  mv "$CC_STREAM_FILE" "${CC_STREAM_FILE}.jsonl"; CC_STREAM_FILE="${CC_STREAM_FILE}.jsonl"
-  LAST_TOOL=""
 
-  timeout "$CC_TIMEOUT" claude "${CC_ARGS[@]}" < /dev/null > "$CC_STREAM_FILE" 2>/dev/null &
-  CC_PID=$!
+  if [ "$PARALLEL" -gt 1 ] 2>/dev/null; then
+    # ─── Parallel mode: multiple workers in worktrees ──────────
+    echo "[loop] Parallel mode: $PARALLEL workers"
+    PARALLEL_RESULT=$(CC_TIMEOUT="$CC_TIMEOUT" OWNER_CONTENT="$OWNER_CONTENT" \
+      DIRECTION="$DIRECTION" ITERATION="$ITERATION" MAX_ITERATIONS="$MAX_ITERATIONS" \
+      LOG_FILE="$LOG_FILE" SESSION_ID="$SESSION_ID" \
+      "$SCRIPT_DIR/parallel.sh" "$PROJECT_DIR" "$SESSION_BRANCH" "$PARALLEL" 2>&1)
 
-  # Live progress — use byte offset to avoid re-parsing the full stream file
-  STREAM_OFFSET=0
-  while kill -0 "$CC_PID" 2>/dev/null; do
-    if [ -s "$CC_STREAM_FILE" ]; then
-      FILE_SIZE=$(wc -c < "$CC_STREAM_FILE" 2>/dev/null | tr -d ' ')
-      if [ "$FILE_SIZE" -gt "$STREAM_OFFSET" ]; then
-        NEW_TOOL=$(tail -c +"$((STREAM_OFFSET + 1))" "$CC_STREAM_FILE" 2>/dev/null \
-          | jq -c 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use") | .name' 2>/dev/null \
-          | tail -1)
-        STREAM_OFFSET="$FILE_SIZE"
-        if [ -n "$NEW_TOOL" ] && [ "$NEW_TOOL" != "$LAST_TOOL" ]; then
-          echo "  [cc] $NEW_TOOL"
-          LAST_TOOL="$NEW_TOOL"
+    # The last line of output is the JSON result; everything before is progress
+    PARALLEL_JSON=$(echo "$PARALLEL_RESULT" | tail -1)
+    PARALLEL_PROGRESS=$(echo "$PARALLEL_RESULT" | head -n -1)
+    [ -n "$PARALLEL_PROGRESS" ] && echo "$PARALLEL_PROGRESS"
+
+    CC_END=$(date +%s)
+    CC_ELAPSED=$(( CC_END - CC_START ))
+
+    # Parse results
+    COST=$(echo "$PARALLEL_JSON" | jq -r '.total_cost // 0' 2>/dev/null | grep -oE '^[0-9]+(\.[0-9]+)?' | head -1)
+    [ -z "$COST" ] && COST="0"
+    TOTAL_COST=$(echo "$TOTAL_COST + $COST" | bc 2>/dev/null || echo "$TOTAL_COST")
+
+    P_COMMITS=$(echo "$PARALLEL_JSON" | jq -r '.commits // 0' 2>/dev/null)
+    TOTAL_COMMITS=$((TOTAL_COMMITS + P_COMMITS))
+
+    if [ "$P_COMMITS" -gt 0 ]; then
+      echo "[loop] ✓ $P_COMMITS merged commit(s) in ${CC_ELAPSED}s (\$$COST)"
+      log_event "parallel_done" "$COST" "commits=$P_COMMITS, workers=$PARALLEL, elapsed=${CC_ELAPSED}s"
+    else
+      echo "[loop] ✗ No commits from $PARALLEL workers in ${CC_ELAPSED}s (\$$COST)"
+      log_event "parallel_empty" "$COST" "workers=$PARALLEL, elapsed=${CC_ELAPSED}s"
+    fi
+    echo ""
+
+  else
+    # ─── Serial mode: single CC invocation ─────────────────────
+
+    # Build prompt
+    TASK_PROMPT=$(build_prompt "$ITERATION" "$MAX_ITERATIONS")
+
+    # Build CC args
+    CC_ARGS=(-p "$TASK_PROMPT" --dangerously-skip-permissions --output-format stream-json --verbose)
+    [ -n "$OWNER_CONTENT" ] && CC_ARGS+=(--append-system-prompt "$OWNER_CONTENT")
+
+    # Spawn CC
+    echo "[loop] CC running..."
+    CC_STREAM_FILE=$(mktemp /tmp/autonomous-cc-XXXXXXXX)
+    mv "$CC_STREAM_FILE" "${CC_STREAM_FILE}.jsonl"; CC_STREAM_FILE="${CC_STREAM_FILE}.jsonl"
+    LAST_TOOL=""
+
+    timeout "$CC_TIMEOUT" claude "${CC_ARGS[@]}" < /dev/null > "$CC_STREAM_FILE" 2>/dev/null &
+    CC_PID=$!
+
+    # Live progress — use byte offset to avoid re-parsing the full stream file
+    STREAM_OFFSET=0
+    while kill -0 "$CC_PID" 2>/dev/null; do
+      if [ -s "$CC_STREAM_FILE" ]; then
+        FILE_SIZE=$(wc -c < "$CC_STREAM_FILE" 2>/dev/null | tr -d ' ')
+        if [ "$FILE_SIZE" -gt "$STREAM_OFFSET" ]; then
+          NEW_TOOL=$(tail -c +"$((STREAM_OFFSET + 1))" "$CC_STREAM_FILE" 2>/dev/null \
+            | jq -c 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use") | .name' 2>/dev/null \
+            | tail -1)
+          STREAM_OFFSET="$FILE_SIZE"
+          if [ -n "$NEW_TOOL" ] && [ "$NEW_TOOL" != "$LAST_TOOL" ]; then
+            echo "  [cc] $NEW_TOOL"
+            LAST_TOOL="$NEW_TOOL"
+          fi
         fi
       fi
+      sleep 2
+    done
+
+    wait "$CC_PID" 2>/dev/null; EXIT_CODE=$?
+    CC_END=$(date +%s)
+    CC_ELAPSED=$(( CC_END - CC_START ))
+
+    # Timeout?
+    if [ "$EXIT_CODE" -eq 124 ]; then
+      echo "[loop] TIMEOUT (${CC_TIMEOUT}s)"
+      log_event "timeout" 0 "elapsed=${CC_ELAPSED}s"
+      rm -f "$CC_STREAM_FILE"
+      continue
     fi
-    sleep 2
-  done
 
-  wait "$CC_PID" 2>/dev/null; EXIT_CODE=$?
-  CC_END=$(date +%s)
-  CC_ELAPSED=$(( CC_END - CC_START ))
+    # Extract result + cost from stream
+    CC_RESULT=$(jq -c 'select(.type == "result")' "$CC_STREAM_FILE" 2>/dev/null | tail -1)
+    COST=$(echo "$CC_RESULT" | jq -r '.total_cost_usd // 0' 2>/dev/null | grep -oE '^[0-9]+(\.[0-9]+)?' | head -1)
+    [ -z "$COST" ] && COST="0"
+    TOTAL_COST=$(echo "$TOTAL_COST + $COST" | bc 2>/dev/null || echo "$TOTAL_COST")
 
-  # Timeout?
-  if [ "$EXIT_CODE" -eq 124 ]; then
-    echo "[loop] TIMEOUT (${CC_TIMEOUT}s)"
-    log_event "timeout" 0 "elapsed=${CC_ELAPSED}s"
+    # Tool summary
+    TOOL_SUMMARY=$(jq -c 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use") | .name' "$CC_STREAM_FILE" 2>/dev/null | sort | uniq -c | sort -rn | head -5)
+
+    # Result preview
+    RESULT_TEXT=$(echo "$CC_RESULT" | jq -r '.result // empty' 2>/dev/null | head -c 300)
+
     rm -f "$CC_STREAM_FILE"
-    continue
+
+    # Did CC commit?
+    HEAD_AFTER=$(git -C "$PROJECT_DIR" rev-parse HEAD 2>/dev/null)
+    if [ "$HEAD_BEFORE" != "$HEAD_AFTER" ]; then
+      NEW_COMMITS=$(git -C "$PROJECT_DIR" rev-list --count "$HEAD_BEFORE..$HEAD_AFTER" 2>/dev/null || echo 0)
+      TOTAL_COMMITS=$((TOTAL_COMMITS + NEW_COMMITS))
+      echo "[loop] ✓ $NEW_COMMITS commit(s) in ${CC_ELAPSED}s (\$$COST)"
+      git -C "$PROJECT_DIR" log --oneline "$HEAD_BEFORE..$HEAD_AFTER" 2>/dev/null | sed 's/^/  /'
+      log_event "success" "$COST" "commits=$NEW_COMMITS, elapsed=${CC_ELAPSED}s"
+    else
+      echo "[loop] ✗ No commits in ${CC_ELAPSED}s (\$$COST)"
+      [ -n "$RESULT_TEXT" ] && echo "  CC: ${RESULT_TEXT:0:200}"
+      log_event "no_change" "$COST" "elapsed=${CC_ELAPSED}s"
+    fi
+
+    # Show tool summary
+    if [ -n "$TOOL_SUMMARY" ]; then
+      echo "  Tools: $(echo "$TOOL_SUMMARY" | awk '{printf "%s×%s ", $2, $1}' | sed 's/ $//')"
+    fi
+    echo ""
+
   fi
-
-  # Extract result + cost from stream
-  CC_RESULT=$(jq -c 'select(.type == "result")' "$CC_STREAM_FILE" 2>/dev/null | tail -1)
-  COST=$(echo "$CC_RESULT" | jq -r '.total_cost_usd // 0' 2>/dev/null | grep -oE '^[0-9]+(\.[0-9]+)?' | head -1)
-  [ -z "$COST" ] && COST="0"
-  TOTAL_COST=$(echo "$TOTAL_COST + $COST" | bc 2>/dev/null || echo "$TOTAL_COST")
-
-  # Tool summary
-  TOOL_SUMMARY=$(jq -c 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use") | .name' "$CC_STREAM_FILE" 2>/dev/null | sort | uniq -c | sort -rn | head -5)
-
-  # Result preview
-  RESULT_TEXT=$(echo "$CC_RESULT" | jq -r '.result // empty' 2>/dev/null | head -c 300)
-
-  rm -f "$CC_STREAM_FILE"
-
-  # Did CC commit?
-  HEAD_AFTER=$(git -C "$PROJECT_DIR" rev-parse HEAD 2>/dev/null)
-  if [ "$HEAD_BEFORE" != "$HEAD_AFTER" ]; then
-    NEW_COMMITS=$(git -C "$PROJECT_DIR" rev-list --count "$HEAD_BEFORE..$HEAD_AFTER" 2>/dev/null || echo 0)
-    TOTAL_COMMITS=$((TOTAL_COMMITS + NEW_COMMITS))
-    echo "[loop] ✓ $NEW_COMMITS commit(s) in ${CC_ELAPSED}s (\$$COST)"
-    git -C "$PROJECT_DIR" log --oneline "$HEAD_BEFORE..$HEAD_AFTER" 2>/dev/null | sed 's/^/  /'
-    log_event "success" "$COST" "commits=$NEW_COMMITS, elapsed=${CC_ELAPSED}s"
-  else
-    echo "[loop] ✗ No commits in ${CC_ELAPSED}s (\$$COST)"
-    [ -n "$RESULT_TEXT" ] && echo "  CC: ${RESULT_TEXT:0:200}"
-    log_event "no_change" "$COST" "elapsed=${CC_ELAPSED}s"
-  fi
-
-  # Show tool summary
-  if [ -n "$TOOL_SUMMARY" ]; then
-    echo "  Tools: $(echo "$TOOL_SUMMARY" | awk '{printf "%s×%s ", $2, $1}' | sed 's/ $//')"
-  fi
-  echo ""
 
   # Budget check
   if ! echo "$MAX_COST_USD" | grep -qE '^0(\.0+)?$'; then

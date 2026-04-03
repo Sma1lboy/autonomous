@@ -10,6 +10,7 @@ finding and fixing issues in any codebase.
 - `scripts/discover.sh` — Task discovery from TODOS.md, KANBAN.md, TODO comments, GitHub issues
 - `scripts/report.sh` — Parse autonomous-log.jsonl into human-readable summary (or `--json`)
 - `scripts/status.sh` — Quick session status dashboard (branch stats, cost, sentinel state; `--json`)
+- `scripts/parallel.sh` — Worktree-based parallel execution (N workers per iteration)
 - `scripts/persona.sh` — OWNER.md auto-generation from git history + project docs
 - `OWNER.md.template` — Template for manual persona configuration
 - `TRACE.md` — Auto-maintained session history (commits, cost, duration per session)
@@ -21,8 +22,9 @@ finding and fixing issues in any codebase.
 2. persona.sh generates OWNER.md if missing (from git log + CLAUDE.md + README.md)
 3. discover.sh finds tasks (TODOS.md, code TODOs, GitHub issues)
 4. loop.sh creates `auto/session-TIMESTAMP` branch and iterates:
-   - Picks highest-priority task
-   - Spawns `claude -p` with --permission-mode auto, --output-format json
+   - **Serial mode** (default): picks one task, spawns `claude -p`
+   - **Parallel mode** (`--parallel N`): picks N tasks, creates N git worktrees,
+     spawns N `claude -p` concurrently, cherry-picks results back to session branch
    - Verifies result (runs tests if available)
    - Commits on success, rolls back on failure
    - 3-strike rule: skip task after 3 failures

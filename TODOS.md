@@ -48,7 +48,12 @@
 - [x] Add `--status` flag to loop.sh
 - [x] Add `--stop` flag to loop.sh — graceful remote stop via sentinel file
 
+## Completed (v0.9)
+- [x] Add color output to report.sh and status.sh (`--color`, `--no-color`, auto-TTY)
+
+## Completed (v1.0)
+- [x] Worktree parallel execution — `parallel.sh` + `--parallel N` flag (179 tests)
+
 ## Open
 - [ ] Improve log aggregation — iterations/commits stats from session_end events
-- [ ] Add color output option to status.sh and report.sh
 - [ ] Support multiple project directories in status.sh (workspace overview)

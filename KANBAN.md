@@ -5,7 +5,6 @@ Project board for autonomous-skill. Updated by the autonomous agent and maintain
 ## Todo
 
 - [ ] Improve log aggregation — iterations/commits stats from session_end events
-- [ ] Add color output to status.sh and report.sh
 - [ ] Support multiple project directories in status.sh (workspace overview)
 
 ## Doing
@@ -14,6 +13,8 @@ _(nothing in progress)_
 
 ## Done
 
+- [x] Worktree parallel execution — `parallel.sh` + `--parallel N` flag (179 tests)
+- [x] Add color output to report.sh and status.sh (`--color`, `--no-color`, auto-TTY) — 131 tests
 - [x] Add `--stop` flag — graceful remote stop via sentinel file
 - [x] Add `scripts/status.sh` — session status dashboard with `--json` output + `--status` flag
 - [x] Improve live progress — tail/offset instead of re-parsing full stream file

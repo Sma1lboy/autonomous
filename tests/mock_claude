@@ -28,7 +28,7 @@ cat << EOF
 EOF
 
 # If commit requested, make a change and commit
-if [ "$DO_COMMIT" = "1" ] && [ -d "$REPO/.git" ]; then
+if [ "$DO_COMMIT" = "1" ] && git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1; then
   echo "mock-change-$(date +%s)" >> "$REPO/.mock-changes"
   git -C "$REPO" add .mock-changes 2>/dev/null
   git -C "$REPO" commit -m "$MSG" --no-gpg-sign 2>/dev/null >&2 || true
