@@ -401,6 +401,10 @@ OUTPUT=$("$PROJECT_ROOT/scripts/report.sh" "$REPO" 2>&1)
 assert_contains "$OUTPUT" "SESSION REPORT" "report.sh shows header"
 assert_contains "$OUTPUT" "Sessions:.*1" "report.sh shows session count"
 assert_contains "$OUTPUT" "Total commits:.*1" "report.sh shows commit count"
+assert_contains "$OUTPUT" "Total duration:.*3m" "report.sh shows total duration"
+assert_contains "$OUTPUT" "Cost/iter:" "report.sh shows cost per iteration"
+assert_contains "$OUTPUT" "Cost/commit:" "report.sh shows cost per commit"
+assert_contains "$OUTPUT" "DURATION" "report.sh per-session table has DURATION column"
 
 # JSON report
 JSON_OUTPUT=$("$PROJECT_ROOT/scripts/report.sh" "$REPO" --json 2>&1)
@@ -417,6 +421,39 @@ if [ "$JSON_SESSIONS" = "1" ]; then
   pass "report.sh --json has correct session count"
 else
   fail "report.sh --json session count (got $JSON_SESSIONS, expected 1)"
+fi
+
+# Duration and efficiency metrics in JSON
+TESTS_RUN=$((TESTS_RUN + 1))
+JSON_DURATION=$(echo "$JSON_OUTPUT" | jq '.totals.total_duration_s' 2>/dev/null)
+if [ "$JSON_DURATION" = "180" ]; then
+  pass "report.sh --json has correct total_duration_s"
+else
+  fail "report.sh --json total_duration_s (got $JSON_DURATION, expected 180)"
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+JSON_AVG_ITER=$(echo "$JSON_OUTPUT" | jq '.totals.avg_cost_per_iter' 2>/dev/null)
+if echo "$JSON_AVG_ITER" | grep -qE '^0\.[0-9]+$'; then
+  pass "report.sh --json has avg_cost_per_iter"
+else
+  fail "report.sh --json avg_cost_per_iter (got $JSON_AVG_ITER)"
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+JSON_AVG_COMMIT=$(echo "$JSON_OUTPUT" | jq '.totals.avg_cost_per_commit' 2>/dev/null)
+if echo "$JSON_AVG_COMMIT" | grep -qE '^0\.[0-9]+$'; then
+  pass "report.sh --json has avg_cost_per_commit"
+else
+  fail "report.sh --json avg_cost_per_commit (got $JSON_AVG_COMMIT)"
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+JSON_SESSION_DUR=$(echo "$JSON_OUTPUT" | jq '.sessions[0].duration_s' 2>/dev/null)
+if [ "$JSON_SESSION_DUR" = "180" ]; then
+  pass "report.sh --json session has duration_s"
+else
+  fail "report.sh --json session duration_s (got $JSON_SESSION_DUR, expected 180)"
 fi
 
 rm -rf "$DATA_DIR"

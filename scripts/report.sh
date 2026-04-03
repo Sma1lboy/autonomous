@@ -42,6 +42,8 @@ SESSIONS=$(echo "$ENTRIES" | jq -s '
     total_cost: (([.[].cost_usd] | map(select(. > 0)) | add // 0) * 10000 | round / 10000),
     commits: ([.[] | select(.event == "session_end") | .detail // "" |
       capture("commits=(?<n>[0-9]+)") | .n | tonumber] | first // 0),
+    duration_s: ([.[] | select(.event == "session_end") | .detail // "" |
+      capture("duration=(?<n>[0-9]+)s") | .n | tonumber] | first // null),
     successes: [.[] | select(.event == "success")] | length,
     failures: [.[] | select(.event == "failure")] | length,
     timeouts: [.[] | select(.event == "timeout")] | length,
@@ -61,7 +63,14 @@ TOTALS=$(echo "$SESSIONS" | jq '{
   total_failures: ([.[].failures] | add // 0),
   total_timeouts: ([.[].timeouts] | add // 0),
   total_no_changes: ([.[].no_changes] | add // 0),
-  budget_hits: ([.[] | select(.budget_hit)] | length)
+  total_duration_s: ([.[].duration_s | select(. != null)] | add // 0),
+  budget_hits: ([.[] | select(.budget_hit)] | length),
+  avg_cost_per_iter: (if ([.[].iterations] | add // 0) > 0
+    then (([.[].total_cost] | add // 0) / ([.[].iterations] | add) * 10000 | round / 10000)
+    else 0 end),
+  avg_cost_per_commit: (if ([.[].commits] | add // 0) > 0
+    then (([.[].total_cost] | add // 0) / ([.[].commits] | add) * 10000 | round / 10000)
+    else 0 end)
 }')
 
 # ─── Top failure messages ─────────────────────────────────────────
@@ -93,6 +102,7 @@ TOTAL_SUCCESSES=$(echo "$TOTALS" | jq -r '.total_successes')
 TOTAL_FAILURES=$(echo "$TOTALS" | jq -r '.total_failures')
 TOTAL_TIMEOUTS=$(echo "$TOTALS" | jq -r '.total_timeouts')
 BUDGET_HITS=$(echo "$TOTALS" | jq -r '.budget_hits')
+TOTAL_DURATION_S=$(echo "$TOTALS" | jq -r '.total_duration_s')
 
 # Success rate
 if [ "$TOTAL_ITERS" -gt 0 ]; then
@@ -104,12 +114,32 @@ fi
 # Cost per commit
 if [ "$TOTAL_COMMITS" -gt 0 ]; then
   COST_PER_COMMIT=$(echo "scale=2; $TOTAL_COST / $TOTAL_COMMITS" | bc 2>/dev/null || echo "?")
-  # Ensure leading zero (bc outputs ".41" not "0.41")
   case "$COST_PER_COMMIT" in
     .*) COST_PER_COMMIT="0$COST_PER_COMMIT" ;;
   esac
 else
   COST_PER_COMMIT="N/A"
+fi
+
+# Cost per iteration
+if [ "$TOTAL_ITERS" -gt 0 ]; then
+  COST_PER_ITER=$(echo "scale=2; $TOTAL_COST / $TOTAL_ITERS" | bc 2>/dev/null || echo "?")
+  case "$COST_PER_ITER" in
+    .*) COST_PER_ITER="0$COST_PER_ITER" ;;
+  esac
+else
+  COST_PER_ITER="N/A"
+fi
+
+# Format total duration
+if [ "$TOTAL_DURATION_S" -ge 3600 ] 2>/dev/null; then
+  TOTAL_DUR_FMT="$((TOTAL_DURATION_S/3600))h $((TOTAL_DURATION_S%3600/60))m"
+elif [ "$TOTAL_DURATION_S" -ge 60 ] 2>/dev/null; then
+  TOTAL_DUR_FMT="$((TOTAL_DURATION_S/60))m $((TOTAL_DURATION_S%60))s"
+elif [ "$TOTAL_DURATION_S" -gt 0 ] 2>/dev/null; then
+  TOTAL_DUR_FMT="${TOTAL_DURATION_S}s"
+else
+  TOTAL_DUR_FMT="N/A"
 fi
 
 echo "═══════════════════════════════════════════════════"
@@ -121,38 +151,38 @@ echo "  Sessions:       $SESSION_COUNT"
 echo "  Total cost:     \$$TOTAL_COST"
 echo "  Total commits:  $TOTAL_COMMITS"
 echo "  Total iters:    $TOTAL_ITERS"
+echo "  Total duration: $TOTAL_DUR_FMT"
 echo "  Success rate:   ${SUCCESS_RATE}%"
 echo "  Cost/commit:    \$$COST_PER_COMMIT"
+echo "  Cost/iter:      \$$COST_PER_ITER"
 echo "  Timeouts:       $TOTAL_TIMEOUTS"
 echo "  Budget stops:   $BUDGET_HITS"
 echo ""
 
 # ─── Per-session table ────────────────────────────────────────────
 echo "─── Sessions ───────────────────────────────────────"
-printf "  %-12s  %-12s  %5s  %4s  %9s  %s\n" "SESSION" "DATE" "ITERS" "CMTS" "COST" "STATUS"
-printf "  %-12s  %-12s  %5s  %4s  %9s  %s\n" "───────────" "──────────" "─────" "────" "─────────" "──────"
+printf "  %-12s  %-12s  %5s  %4s  %8s  %9s  %s\n" "SESSION" "DATE" "ITERS" "CMTS" "DURATION" "COST" "STATUS"
+printf "  %-12s  %-12s  %5s  %4s  %8s  %9s  %s\n" "───────────" "──────────" "─────" "────" "────────" "─────────" "──────"
 
 echo "$SESSIONS" | jq -r '.[] |
   .session as $s |
   (.start_ts // "?" | split("T")[0] // "?") as $date |
   (.iterations | tostring) as $iters |
   (.commits | tostring) as $cmts |
+  (.duration_s // null) as $dur |
+  (if $dur == null then "-"
+   elif $dur >= 3600 then "\($dur / 3600 | floor)h \($dur % 3600 / 60 | floor)m"
+   elif $dur >= 60 then "\($dur / 60 | floor)m \($dur % 60)s"
+   else "\($dur)s" end) as $dur_fmt |
   (.total_cost | . * 100 | round / 100 | tostring | if . == "0" then "$0.00" else "$" + . end) as $cost |
   (if .budget_hit then "budget"
    elif .timeouts > 0 and .successes == 0 then "timeout"
    elif .failures > 0 and .successes == 0 then "failed"
    elif .successes > 0 then "ok"
    else "no-op" end) as $status |
-  "  \($s)  \($date)  \($iters)  \($cmts)  \($cost)  \($status)"
-' | while IFS= read -r line; do
-  # Align columns with printf
-  session=$(echo "$line" | awk '{print $1}')
-  date=$(echo "$line" | awk '{print $2}')
-  iters=$(echo "$line" | awk '{print $3}')
-  cmts=$(echo "$line" | awk '{print $4}')
-  cost=$(echo "$line" | awk '{print $5}')
-  status=$(echo "$line" | awk '{print $6}')
-  printf "  %-12s  %-12s  %5s  %4s  %9s  %s\n" "$session" "$date" "$iters" "$cmts" "$cost" "$status"
+  "\($s)\t\($date)\t\($iters)\t\($cmts)\t\($dur_fmt)\t\($cost)\t\($status)"
+' | while IFS=$'\t' read -r session date iters cmts dur cost status; do
+  printf "  %-12s  %-12s  %5s  %4s  %8s  %9s  %s\n" "$session" "$date" "$iters" "$cmts" "$dur" "$cost" "$status"
 done
 echo ""
 
