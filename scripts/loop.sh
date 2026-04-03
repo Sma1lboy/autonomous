@@ -25,6 +25,19 @@ mkdir -p "$DATA_DIR"
 # Excluded workflows (dangerous in autonomous mode)
 EXCLUDED_WORKFLOWS="/ship /land-and-deploy /careful /guard"
 
+# ─── Dependency checks ────────────────────────────────────────────
+MISSING_DEPS=""
+for dep in jq claude git timeout; do
+  if ! command -v "$dep" >/dev/null 2>&1; then
+    MISSING_DEPS="${MISSING_DEPS:+$MISSING_DEPS, }$dep"
+  fi
+done
+if [ -n "$MISSING_DEPS" ]; then
+  echo "[loop] ERROR: Missing required commands: $MISSING_DEPS" >&2
+  echo "[loop] Install them and try again." >&2
+  exit 1
+fi
+
 # ─── Signal handling & cleanup ──────────────────────────────────────
 INTERRUPTED=0
 CC_STREAM_FILE=""  # Initialized here so cleanup trap can access it
