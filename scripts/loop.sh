@@ -130,13 +130,15 @@ mark_task() {
 }
 
 add_cost() {
-  local cost="$1"
-  # Truncate to 6 decimal places to avoid floating point edge cases
-  cost=$(echo "$cost" | awk '{printf "%.6f", $1}' 2>/dev/null || echo "0")
+  local raw_cost="$1"
+  # Extract first valid number, strip everything else
+  local cost
+  cost=$(echo "$raw_cost" | grep -oE '^[0-9]+(\.[0-9]+)?' | head -1)
+  if [ -z "$cost" ]; then cost="0"; fi
   local tmp
   tmp=$(mktemp)
   if ! jq --argjson c "$cost" '.total_cost_usd += $c' "$STATE_FILE" > "$tmp" 2>/dev/null; then
-    echo "[loop] WARNING: add_cost failed for cost=$cost" >&2
+    echo "[loop] WARNING: add_cost failed (raw=$raw_cost, parsed=$cost)" >&2
     rm -f "$tmp"
     return
   fi
@@ -174,6 +176,7 @@ detect_test_command() {
 verify_result() {
   local cc_output="$1"
   local task_desc="$2"
+  local head_before="$3"
 
   # Parse JSON
   local is_error
@@ -188,7 +191,17 @@ verify_result() {
     return 1
   fi
 
-  # Check if there are actual code changes (tracked modifications OR untracked files)
+  # Check if CC made its own commits (HEAD moved)
+  local head_after
+  head_after=$(git -C "$PROJECT_DIR" rev-parse HEAD 2>/dev/null)
+  if [ -n "$head_before" ] && [ "$head_before" != "$head_after" ]; then
+    local cc_commits
+    cc_commits=$(git -C "$PROJECT_DIR" rev-list --count "$head_before..$head_after" 2>/dev/null || echo 0)
+    echo "pass:$cost:CC committed ($cc_commits commit(s))"
+    return 0
+  fi
+
+  # Check if there are uncommitted changes (tracked modifications OR untracked files)
   local has_changes=0
   if ! git -C "$PROJECT_DIR" diff --quiet HEAD 2>/dev/null; then
     has_changes=1
@@ -392,6 +405,9 @@ while [ "$MAX_ITERATIONS" -eq 0 ] 2>/dev/null || [ "$ITERATION" -lt "$MAX_ITERAT
   CC_ARGS+=(--append-system-prompt "$AUTONOMOUS_PROMPT")
 
   # Run CC with timeout, streaming progress to stderr
+  # Record HEAD before CC runs — CC might commit on its own
+  HEAD_BEFORE=$(git -C "$PROJECT_DIR" rev-parse HEAD 2>/dev/null)
+
   echo "[loop] Running CC... (timeout: ${CC_TIMEOUT}s)"
   CC_START=$(date +%s)
   CC_STREAM_FILE=$(mktemp /tmp/autonomous-cc-XXXXXXXX)
@@ -467,7 +483,7 @@ while [ "$MAX_ITERATIONS" -eq 0 ] 2>/dev/null || [ "$ITERATION" -lt "$MAX_ITERAT
   fi
 
   # Verify result
-  VERIFY_RESULT=$(verify_result "$CC_OUTPUT" "$TASK_DESC")
+  VERIFY_RESULT=$(verify_result "$CC_OUTPUT" "$TASK_DESC" "$HEAD_BEFORE")
   VERIFY_STATUS=$(echo "$VERIFY_RESULT" | cut -d: -f1)
   VERIFY_COST=$(echo "$VERIFY_RESULT" | cut -d: -f2)
   VERIFY_MSG=$(echo "$VERIFY_RESULT" | cut -d: -f3-)
