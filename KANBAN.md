@@ -4,7 +4,6 @@ Project board for autonomous-skill. Updated by the autonomous agent and maintain
 
 ## Todo
 
-- [ ] Add `--dry-run` flag to loop.sh — show what would happen without spawning CC
 - [ ] Add session cost budget (`MAX_COST_USD` env var) to loop.sh
 - [ ] Implement `scripts/report.sh` — parse autonomous-log.jsonl into human-readable summary
 
@@ -14,6 +13,7 @@ _(nothing in progress)_
 
 ## Done
 
+- [x] Add `--dry-run` flag to loop.sh — preview tasks without running
 - [x] Implement TRACE.md — auto-maintained session history
 - [x] Rewrite loop.sh as thin harness (608→239 lines)
 - [x] Fix all 12 bugs from initial TODOS.md

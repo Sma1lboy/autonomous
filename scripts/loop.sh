@@ -5,7 +5,19 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="${1:-.}"
+
+# ─── Argument parsing ──────────────────────────────────────────────
+DRY_RUN=0
+PROJECT_DIR="."
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) DRY_RUN=1; shift ;;
+    -*) echo "[loop] ERROR: unknown flag: $1" >&2; exit 1 ;;
+    *) PROJECT_DIR="$1"; shift ;;
+  esac
+done
+
 MAX_ITERATIONS="${MAX_ITERATIONS:-50}"  # 0 = unlimited
 CC_TIMEOUT="${CC_TIMEOUT:-900}"
 DIRECTION="${AUTONOMOUS_DIRECTION:-}"
@@ -136,6 +148,41 @@ git -C "$PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1 || { echo "[loop] ERRO
 MAIN_BRANCH=$(git -C "$PROJECT_DIR" show-ref --verify --quiet refs/heads/main 2>/dev/null && echo "main" || echo "master")
 if ! git -C "$PROJECT_DIR" show-ref --verify --quiet "refs/heads/$MAIN_BRANCH" 2>/dev/null; then
   MAIN_BRANCH=$(git -C "$PROJECT_DIR" symbolic-ref --short HEAD 2>/dev/null || echo "main")
+fi
+
+# ─── Dry run ───────────────────────────────────────────────────────
+if [ "$DRY_RUN" -eq 1 ]; then
+  echo "═══════════════════════════════════════════════════"
+  echo "  Autonomous Skill — DRY RUN"
+  echo "  Project: $(basename "$PROJECT_DIR")"
+  [ -n "$DIRECTION" ] && echo "  Direction: $DIRECTION"
+  [ "$MAX_ITERATIONS" -eq 0 ] 2>/dev/null && echo "  Iterations: unlimited" || echo "  Iterations: $MAX_ITERATIONS"
+  echo "  Timeout: ${CC_TIMEOUT}s per iteration"
+  echo "  Branch: $SESSION_BRANCH (would create)"
+  echo "═══════════════════════════════════════════════════"
+  echo ""
+
+  echo "─── Discovered Tasks ───"
+  TASKS=$("$SCRIPT_DIR/discover.sh" "$PROJECT_DIR" 2>/dev/null || echo "[]")
+  TASK_COUNT=$(echo "$TASKS" | jq 'length' 2>/dev/null || echo 0)
+
+  if [ "$TASK_COUNT" -eq 0 ]; then
+    echo "  (no tasks found)"
+  else
+    echo "$TASKS" | jq -r '.[] | "  [P\(.priority)] \(.description) (\(.source))"' 2>/dev/null
+  fi
+
+  echo ""
+  echo "─── Owner Persona ───"
+  if [ -f "$OWNER_FILE" ]; then
+    echo "  Loaded from $OWNER_FILE"
+  else
+    echo "  Would auto-generate via persona.sh"
+  fi
+
+  echo ""
+  echo "$TASK_COUNT task(s) found. Run without --dry-run to start."
+  exit 0
 fi
 
 # Create session branch

@@ -19,7 +19,7 @@
 - [x] Fix sed regex portability (\\s → POSIX [[:space:]]) in discover.sh
 
 ## Open
-- [ ] Add `--dry-run` flag to loop.sh — show plan without spawning CC
+- [x] Add `--dry-run` flag to loop.sh — show plan without spawning CC
 - [ ] Add session cost budget (`MAX_COST_USD` env var) to loop.sh
 - [ ] Implement `scripts/report.sh` — parse autonomous-log.jsonl into summary
 - [x] Competitive analysis — COMPETITIVE.md comparing SWE-agent, Devin, OpenHands
