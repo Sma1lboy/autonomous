@@ -24,4 +24,4 @@
 - [x] Implement `scripts/report.sh` — parse autonomous-log.jsonl into summary
 - [x] Competitive analysis — COMPETITIVE.md comparing SWE-agent, Devin, OpenHands
 - [x] Improve README.md — architecture diagram, usage examples, quickstart
-- [ ] Add test harness — mock CC responses for loop.sh integration tests
+- [x] Add test harness — mock CC responses for loop.sh integration tests

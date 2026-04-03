@@ -12,6 +12,7 @@ _(nothing in progress)_
 
 ## Done
 
+- [x] Add test harness — mock CC responses, 37 integration tests for loop.sh, discover.sh, report.sh
 - [x] Implement `scripts/report.sh` — parse autonomous-log.jsonl into human-readable summary
 
 - [x] Add session cost budget (`MAX_COST_USD` + `--max-cost` flag)

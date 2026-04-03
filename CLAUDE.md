@@ -41,5 +41,12 @@ finding and fixing issues in any codebase.
 ## Testing
 
 ```bash
-shellcheck scripts/*.sh
+bash tests/test_loop.sh     # 37 integration tests (mock CC, no API calls)
+shellcheck scripts/*.sh     # lint all shell scripts
 ```
+
+Test harness uses `tests/claude` (mock CC binary) controlled by env vars:
+- `MOCK_CLAUDE_COST` — reported cost per invocation
+- `MOCK_CLAUDE_COMMIT=1` — make a git commit during the mock run
+- `MOCK_CLAUDE_DELAY` — sleep N seconds (for timeout tests)
+- `MOCK_CLAUDE_EXIT` — exit code to return
