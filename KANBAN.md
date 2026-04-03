@@ -4,13 +4,15 @@ Project board for autonomous-skill. Updated by the autonomous agent and maintain
 
 ## Todo
 
-- [ ] Implement `scripts/report.sh` — parse autonomous-log.jsonl into human-readable summary
+_(nothing — all current items done)_
 
 ## Doing
 
 _(nothing in progress)_
 
 ## Done
+
+- [x] Implement `scripts/report.sh` — parse autonomous-log.jsonl into human-readable summary
 
 - [x] Add session cost budget (`MAX_COST_USD` + `--max-cost` flag)
 - [x] Add `--dry-run` flag to loop.sh — preview tasks without running

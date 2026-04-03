@@ -121,6 +121,19 @@ MAX_ITERATIONS=10 AUTONOMOUS_DIRECTION="refactor the API layer" /autonomous-skil
 | **Sentinel file** | `touch ~/.autonomous-skill/projects/SLUG/.stop-autonomous` |
 | **Auto-stop** | Exits when all tasks done or max iterations reached |
 
+## Session Reports
+
+```bash
+# Human-readable summary of all sessions
+scripts/report.sh .
+
+# Machine-readable JSON (pipe to jq, dashboards, etc.)
+scripts/report.sh . --json
+```
+
+Output includes: session count, total cost, commits, success rate, cost-per-commit,
+per-session breakdown table, and top recurring failures.
+
 ## Reviewing & Merging
 
 ```bash
@@ -150,6 +163,7 @@ autonomous-skill/
 ├── scripts/
 │   ├── loop.sh           # Main autonomous loop (239 lines)
 │   ├── discover.sh       # Task discovery from 4 sources
+│   ├── report.sh         # Session report from log.jsonl
 │   └── persona.sh        # OWNER.md auto-generation
 └── README.md
 ```
