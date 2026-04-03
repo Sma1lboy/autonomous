@@ -58,7 +58,7 @@ fi
 # If no tasks found, add a meta-task to explore
 TASK_COUNT=$(echo "$TASKS" | jq 'length')
 if [ "$TASK_COUNT" -eq 0 ]; then
-  add_task "Explore project and identify improvement opportunities (code quality, test coverage, documentation)" "auto-discover" 5
+  add_task "Read README.md and CLAUDE.md, then create a TODOS.md file with 5 concrete, actionable tasks for improving this project. Each task should be one clear sentence. Focus on: missing tests, error handling gaps, documentation holes, or code quality issues." "auto-discover" 5
 fi
 
 # Sort by priority (lower number = higher priority)
