@@ -47,7 +47,11 @@ cleanup() {
     rm -f "$CC_STREAM_FILE"
   fi
 }
-trap cleanup EXIT ERR
+# EXIT covers all script terminations (normal, set -u errors, exit calls).
+# Do NOT trap ERR here — without set -e, ERR fires on every failed command
+# (e.g., wait returning CC's non-zero exit code), which would prematurely
+# delete CC_STREAM_FILE while the main loop still needs it.
+trap cleanup EXIT
 trap 'INTERRUPTED=1; echo "[loop] SIGINT received, finishing current task..." >&2' INT
 trap 'echo "[loop] SIGTERM received, cleaning up..." >&2; cleanup; exit 143' TERM
 
