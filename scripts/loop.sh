@@ -33,7 +33,7 @@ log_event() {
   local event="$1"
   local details="${2:-}"
   local cost="${3:-0}"
-  echo "{\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"session\":\"$SESSION_ID\",\"iteration\":$ITERATION,\"event\":\"$event\",\"details\":$(echo "$details" | jq -Rs .),\"cost_usd\":$cost}" >> "$LOG_FILE"
+  echo "{\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"session\":\"$SESSION_ID\",\"iteration\":${ITERATION:-0},\"event\":\"$event\",\"details\":$(echo "$details" | jq -Rs .),\"cost_usd\":$cost}" >> "$LOG_FILE"
 }
 
 # ─── State management ───────────────────────────────────────────────

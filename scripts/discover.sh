@@ -30,18 +30,20 @@ if [ -f "$PROJECT_DIR/TODOS.md" ]; then
   done < "$PROJECT_DIR/TODOS.md"
 fi
 
-# Source 2: TODO/FIXME/HACK comments in code
+# Source 2: code comments containing TODO/FIXME/HACK keywords
 if git -C "$PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
-  # Use git grep to find TODOs (respects .gitignore)
   while IFS= read -r match; do
     if [ -n "$match" ]; then
+      # git grep -n output: file:linenum:content
       file=$(echo "$match" | cut -d: -f1)
-      comment=$(echo "$match" | cut -d: -f2- | sed 's/.*\(TODO\|FIXME\|HACK\)[: ]*//' | sed 's/\s*$//' | head -c 200)
+      content=$(echo "$match" | cut -d: -f3-)
+      # Extract the actual TODO/FIXME/HACK message after the keyword
+      comment=$(echo "$content" | sed -E 's/.*\b(TODO|FIXME|HACK)[: ]+//' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' | head -c 200)
       if [ -n "$comment" ] && [ ${#comment} -gt 3 ]; then
         add_task "$comment (in $file)" "code-comment" 5
       fi
     fi
-  done < <(git -C "$PROJECT_DIR" grep -n -i '\(TODO\|FIXME\|HACK\)[: ]' -- '*.ts' '*.js' '*.py' '*.rs' '*.go' '*.rb' '*.java' '*.sh' 2>/dev/null | head -30 || true)
+  done < <(git -C "$PROJECT_DIR" grep -n -i '\bTODO[: ]\|FIXME[: ]\|HACK[: ]' -- '*.ts' '*.js' '*.py' '*.rs' '*.go' '*.rb' '*.java' '*.sh' ':!scripts/discover.sh' 2>/dev/null | head -30 || true)
 fi
 
 # Source 3: GitHub issues (if gh is available and we're in a repo)
