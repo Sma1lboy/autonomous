@@ -33,6 +33,7 @@ finding and fixing issues in any codebase.
 - --permission-mode auto (blocks dangerous operations)
 - Excluded workflows: /ship, /land-and-deploy, /careful, /guard
 - 15-minute timeout per CC invocation
+- Session cost budget (`MAX_COST_USD` env var or `--max-cost` flag)
 - SIGINT + sentinel file for graceful shutdown
 - 3-strike rule prevents infinite retry loops
 

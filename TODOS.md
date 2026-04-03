@@ -20,7 +20,7 @@
 
 ## Open
 - [x] Add `--dry-run` flag to loop.sh — show plan without spawning CC
-- [ ] Add session cost budget (`MAX_COST_USD` env var) to loop.sh
+- [x] Add session cost budget (`MAX_COST_USD` env var + `--max-cost` flag) to loop.sh
 - [ ] Implement `scripts/report.sh` — parse autonomous-log.jsonl into summary
 - [x] Competitive analysis — COMPETITIVE.md comparing SWE-agent, Devin, OpenHands
 - [x] Improve README.md — architecture diagram, usage examples, quickstart

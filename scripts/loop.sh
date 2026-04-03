@@ -10,9 +10,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DRY_RUN=0
 PROJECT_DIR="."
 
+MAX_COST_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
+    --max-cost) MAX_COST_ARG="$2"; shift 2 ;;
+    --max-cost=*) MAX_COST_ARG="${1#*=}"; shift ;;
     -*) echo "[loop] ERROR: unknown flag: $1" >&2; exit 1 ;;
     *) PROJECT_DIR="$1"; shift ;;
   esac
@@ -20,6 +23,7 @@ done
 
 MAX_ITERATIONS="${MAX_ITERATIONS:-50}"  # 0 = unlimited
 CC_TIMEOUT="${CC_TIMEOUT:-900}"
+MAX_COST_USD="${MAX_COST_ARG:-${MAX_COST_USD:-0}}"  # 0 = unlimited; --max-cost or env var
 DIRECTION="${AUTONOMOUS_DIRECTION:-}"
 
 # Paths
@@ -158,6 +162,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
   [ -n "$DIRECTION" ] && echo "  Direction: $DIRECTION"
   [ "$MAX_ITERATIONS" -eq 0 ] 2>/dev/null && echo "  Iterations: unlimited" || echo "  Iterations: $MAX_ITERATIONS"
   echo "  Timeout: ${CC_TIMEOUT}s per iteration"
+  echo "$MAX_COST_USD" | grep -qE '^0(\.0+)?$' && echo "  Budget: unlimited" || echo "  Budget: \$$MAX_COST_USD"
   echo "  Branch: $SESSION_BRANCH (would create)"
   echo "═══════════════════════════════════════════════════"
   echo ""
@@ -197,6 +202,7 @@ echo "  Project: $(basename "$PROJECT_DIR")"
 [ -n "$DIRECTION" ] && echo "  Direction: $DIRECTION"
 [ "$MAX_ITERATIONS" -eq 0 ] 2>/dev/null && echo "  Iterations: unlimited" || echo "  Iterations: $MAX_ITERATIONS"
 echo "  Timeout: ${CC_TIMEOUT}s per iteration"
+echo "$MAX_COST_USD" | grep -qE '^0(\.0+)?$' && echo "  Budget: unlimited" || echo "  Budget: \$$MAX_COST_USD"
 echo "  Branch: $SESSION_BRANCH"
 echo "═══════════════════════════════════════════════════"
 echo ""
@@ -293,6 +299,16 @@ while [ "$MAX_ITERATIONS" -eq 0 ] 2>/dev/null || [ "$ITERATION" -lt "$MAX_ITERAT
     echo "  Tools: $(echo "$TOOL_SUMMARY" | awk '{printf "%s×%s ", $2, $1}' | sed 's/ $//')"
   fi
   echo ""
+
+  # Budget check
+  if ! echo "$MAX_COST_USD" | grep -qE '^0(\.0+)?$'; then
+    OVER_BUDGET=$(echo "$TOTAL_COST >= $MAX_COST_USD" | bc 2>/dev/null || echo 0)
+    if [ "$OVER_BUDGET" -eq 1 ]; then
+      echo "[loop] Budget exceeded (\$$TOTAL_COST >= \$$MAX_COST_USD). Stopping."
+      log_event "budget_exceeded" "$TOTAL_COST" "limit=$MAX_COST_USD"
+      break
+    fi
+  fi
 done
 
 # ─── Metrics ────────────────────────────────────────────────────────
