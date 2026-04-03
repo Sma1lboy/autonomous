@@ -296,27 +296,75 @@ while [ "$MAX_ITERATIONS" -eq 0 ] 2>/dev/null || [ "$ITERATION" -lt "$MAX_ITERAT
   # Build the prompt
   TASK_PROMPT=$(build_prompt "$TASK_DESC" "$TASK_SOURCE")
 
-  # Build CC invocation args
-  CC_ARGS=(-p "$TASK_PROMPT" --permission-mode auto --output-format json)
+  # Build CC invocation args (stream-json for live progress)
+  CC_ARGS=(-p "$TASK_PROMPT" --permission-mode auto --output-format stream-json --verbose)
   if [ -n "$OWNER_CONTENT" ]; then
     CC_ARGS+=(--append-system-prompt "$OWNER_CONTENT")
   fi
   CC_ARGS+=(--append-system-prompt "$AUTONOMOUS_PROMPT")
 
-  # Run CC with timeout
-  CC_OUTPUT=$(timeout "$CC_TIMEOUT" claude "${CC_ARGS[@]}" 2>/dev/null) || {
-    EXIT_CODE=$?
-    if [ "$EXIT_CODE" -eq 124 ]; then
-      echo "[loop] TIMEOUT after ${CC_TIMEOUT}s"
-      log_event "timeout" "$TASK_DESC" 0
-      mark_task "$TASK_ID" "strike" "timeout after ${CC_TIMEOUT}s"
-      ITERATION=$((ITERATION + 1))
-      continue
+  # Run CC with timeout, streaming progress to stderr
+  echo "[loop] Running CC... (timeout: ${CC_TIMEOUT}s)"
+  CC_START=$(date +%s)
+  CC_STREAM_FILE=$(mktemp /tmp/autonomous-cc-XXXXXXXX.jsonl)
+
+  timeout "$CC_TIMEOUT" claude "${CC_ARGS[@]}" < /dev/null > "$CC_STREAM_FILE" 2>/dev/null &
+  CC_PID=$!
+
+  # Live progress: tail the stream and print tool uses + text
+  while kill -0 "$CC_PID" 2>/dev/null; do
+    # Parse latest events and show progress
+    if [ -s "$CC_STREAM_FILE" ]; then
+      # Show tool calls as they happen
+      NEW_TOOLS=$(jq -c 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use") | .name' "$CC_STREAM_FILE" 2>/dev/null | tail -1)
+      if [ -n "$NEW_TOOLS" ] && [ "$NEW_TOOLS" != "$LAST_TOOL" ]; then
+        echo "  [cc] Using tool: $NEW_TOOLS"
+        LAST_TOOL="$NEW_TOOLS"
+      fi
     fi
-    # Other error
-    echo "[loop] CC exited with code $EXIT_CODE"
-    CC_OUTPUT='{"is_error":true,"result":"CC process failed with exit code '"$EXIT_CODE"'","total_cost_usd":0}'
-  }
+    sleep 2
+  done
+  LAST_TOOL=""
+
+  wait "$CC_PID" 2>/dev/null
+  EXIT_CODE=$?
+  CC_END=$(date +%s)
+  CC_ELAPSED=$(( CC_END - CC_START ))
+
+  if [ "$EXIT_CODE" -eq 124 ]; then
+    echo "[loop] TIMEOUT after ${CC_TIMEOUT}s"
+    log_event "timeout" "$TASK_DESC" 0
+    mark_task "$TASK_ID" "strike" "timeout after ${CC_TIMEOUT}s"
+    rm -f "$CC_STREAM_FILE"
+    ITERATION=$((ITERATION + 1))
+    continue
+  fi
+
+  # Extract the result line (last line with type=result)
+  CC_OUTPUT=$(jq -c 'select(.type == "result")' "$CC_STREAM_FILE" 2>/dev/null | tail -1)
+  if [ -z "$CC_OUTPUT" ]; then
+    if [ "$EXIT_CODE" -ne 0 ]; then
+      echo "[loop] CC exited with code $EXIT_CODE"
+      CC_OUTPUT='{"is_error":true,"result":"CC process failed with exit code '"$EXIT_CODE"'","total_cost_usd":0}'
+    else
+      CC_OUTPUT='{"is_error":true,"result":"No result in CC output","total_cost_usd":0}'
+    fi
+  fi
+
+  # Show summary of what CC did
+  TOOL_SUMMARY=$(jq -c 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use") | .name' "$CC_STREAM_FILE" 2>/dev/null | sort | uniq -c | sort -rn | head -5)
+  echo "[loop] CC finished in ${CC_ELAPSED}s. Tools used:"
+  echo "$TOOL_SUMMARY" | while read -r count tool; do
+    echo "  $tool × $count"
+  done
+
+  # Show preview of result
+  CC_RESULT_PREVIEW=$(echo "$CC_OUTPUT" | jq -r '.result // empty' 2>/dev/null | head -c 300)
+  if [ -n "$CC_RESULT_PREVIEW" ]; then
+    echo "[loop] CC says: ${CC_RESULT_PREVIEW}"
+  fi
+
+  rm -f "$CC_STREAM_FILE"
 
   # Handle malformed JSON
   if ! echo "$CC_OUTPUT" | jq . >/dev/null 2>&1; then
