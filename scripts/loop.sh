@@ -19,6 +19,7 @@ Arguments:
 
 Options:
   --status                 Show session status and exit (also: status.sh)
+  --stop                   Signal running session to stop after current iteration
   --dry-run                Show discovered tasks and config, then exit
   --resume [BRANCH]        Continue on an existing session branch instead of
                            creating a new one. If BRANCH is omitted, resumes
@@ -62,6 +63,7 @@ Examples:
   loop.sh --resume                     # continue most recent session
   loop.sh --resume auto/session-12345  # continue specific session
   loop.sh --status                     # check session status
+  loop.sh --stop                       # signal running session to stop
 EOF
   exit 0
 }
@@ -79,6 +81,17 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --help|-h) usage ;;
     --status) exec "$SCRIPT_DIR/status.sh" "$@" ;;
+    --stop)
+      shift  # consume --stop
+      STOP_DIR="${1:-.}"
+      STOP_SLUG=$(basename "$(git -C "$STOP_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$STOP_DIR")")
+      STOP_DATA="${AUTONOMOUS_SKILL_HOME:-$HOME/.autonomous-skill}/projects/$STOP_SLUG"
+      mkdir -p "$STOP_DATA"
+      touch "$STOP_DATA/.stop-autonomous"
+      echo "[loop] Stop sentinel created for $STOP_SLUG."
+      echo "[loop] Running session will stop after the current iteration."
+      exit 0
+      ;;
     --dry-run) DRY_RUN=1; shift ;;
     --resume=*) RESUME_BRANCH="${1#*=}"; shift ;;
     --resume)

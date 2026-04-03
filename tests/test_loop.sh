@@ -1011,6 +1011,59 @@ assert_contains "$STATUS_OUTPUT" "No session branches" "--status works on fresh 
 cleanup_repo "$REPO"
 echo ""
 
+# ─── Test: loop.sh --stop creates sentinel ────────────────────────
+echo "── test_loop_stop_flag ──"
+REPO=$(setup_repo)
+SLUG=$(basename "$REPO")
+SDATA_DIR="$HOME/.autonomous-skill/projects/$SLUG"
+
+# --stop should create sentinel file
+STOP_OUTPUT=$(bash "$LOOP" --stop "$REPO" 2>&1)
+assert_contains "$STOP_OUTPUT" "Stop sentinel created" "--stop shows confirmation"
+assert_contains "$STOP_OUTPUT" "$SLUG" "--stop shows project slug"
+
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ -f "$SDATA_DIR/.stop-autonomous" ]; then
+  pass "--stop creates sentinel file"
+else
+  fail "--stop did not create sentinel file"
+fi
+
+rm -rf "$SDATA_DIR"
+cleanup_repo "$REPO"
+echo ""
+
+# ─── Test: --stop + running session stops loop ────────────────────
+echo "── test_stop_sentinel_stops_loop ──"
+REPO=$(setup_repo)
+SLUG=$(basename "$REPO")
+SDATA_DIR="$HOME/.autonomous-skill/projects/$SLUG"
+mkdir -p "$SDATA_DIR"
+
+# Pre-create sentinel, then run loop — should stop immediately
+touch "$SDATA_DIR/.stop-autonomous"
+
+OUTPUT=$(cd "$REPO" && \
+  MOCK_CLAUDE_COMMIT=1 \
+  MOCK_CLAUDE_REPO="$REPO" \
+  MAX_ITERATIONS=5 \
+  PATH="$SCRIPT_DIR:$PATH" \
+  bash "$LOOP" "$REPO" 2>&1)
+
+assert_contains "$OUTPUT" "Sentinel file detected" "pre-existing sentinel stops loop"
+
+# Verify sentinel was cleaned up
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ ! -f "$SDATA_DIR/.stop-autonomous" ]; then
+  pass "sentinel file removed after detection"
+else
+  fail "sentinel file not cleaned up"
+fi
+
+rm -rf "$SDATA_DIR"
+cleanup_repo "$REPO"
+echo ""
+
 # ═══════════════════════════════════════════════════════════════════
 # SUMMARY
 # ═══════════════════════════════════════════════════════════════════
