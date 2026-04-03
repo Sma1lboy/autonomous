@@ -4,7 +4,10 @@ Project board for autonomous-skill. Updated by the autonomous agent and maintain
 
 ## Todo
 
-_(empty — suggest new tasks or report bugs)_
+- [ ] Add `--stop` flag to loop.sh — create sentinel file to stop running session
+- [ ] Improve log aggregation — iterations/commits stats from session_end events
+- [ ] Add color output to status.sh and report.sh
+- [ ] Support multiple project directories in status.sh (workspace overview)
 
 ## Doing
 
@@ -12,6 +15,7 @@ _(nothing in progress)_
 
 ## Done
 
+- [x] Add `scripts/status.sh` — session status dashboard with `--json` output + `--status` flag
 - [x] Improve live progress — tail/offset instead of re-parsing full stream file
 - [x] discover.sh: scan extended file types — .tsx, .jsx, .cpp, .c, .h, .hpp, .md (5 new tests, 95 total)
 - [x] Add `.autonomous-skill.yml` config file support (22 new tests, 90 total)

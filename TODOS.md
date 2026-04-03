@@ -43,5 +43,12 @@
 - [x] discover.sh: scan more file types for TODOs (`.tsx`, `.jsx`, `.cpp`, `.c`, `.md`, `.h`, `.hpp`)
 - [x] Improve live progress — use tail/offset instead of re-parsing full stream file
 
+## Completed (v0.8)
+- [x] Add `scripts/status.sh` — session status dashboard with `--json` output
+- [x] Add `--status` flag to loop.sh
+
 ## Open
-_(no open items — suggest new improvements or report bugs)_
+- [ ] Add `--stop` flag to loop.sh — create sentinel file to stop running session
+- [ ] Improve log aggregation — iterations/commits stats from session_end events
+- [ ] Add color output option to status.sh and report.sh
+- [ ] Support multiple project directories in status.sh (workspace overview)

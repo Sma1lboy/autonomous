@@ -9,6 +9,7 @@ finding and fixing issues in any codebase.
 - `scripts/loop.sh` — Main autonomous loop (bash while-loop, spawns fresh CC per iteration)
 - `scripts/discover.sh` — Task discovery from TODOS.md, KANBAN.md, TODO comments, GitHub issues
 - `scripts/report.sh` — Parse autonomous-log.jsonl into human-readable summary (or `--json`)
+- `scripts/status.sh` — Quick session status dashboard (branch stats, cost, sentinel state; `--json`)
 - `scripts/persona.sh` — OWNER.md auto-generation from git history + project docs
 - `OWNER.md.template` — Template for manual persona configuration
 - `TRACE.md` — Auto-maintained session history (commits, cost, duration per session)
@@ -41,7 +42,7 @@ finding and fixing issues in any codebase.
 ## Testing
 
 ```bash
-bash tests/test_loop.sh     # 37 integration tests (mock CC, no API calls)
+bash tests/test_loop.sh     # 100+ integration tests (mock CC, no API calls)
 shellcheck scripts/*.sh     # lint all shell scripts
 ```
 
