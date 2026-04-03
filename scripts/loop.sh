@@ -502,6 +502,13 @@ while [ "$MAX_ITERATIONS" -eq 0 ] 2>/dev/null || [ "$ITERATION" -lt "$MAX_ITERAT
       echo "[loop] ✗ No commits in ${CC_ELAPSED}s (\$$COST)"
       [ -n "$RESULT_TEXT" ] && echo "  CC: ${RESULT_TEXT:0:200}"
       log_event "no_change" "$COST" "elapsed=${CC_ELAPSED}s"
+
+      # Detect rate limit — stop immediately instead of burning iterations
+      if echo "$RESULT_TEXT" | grep -qi 'hit.*limit\|rate.limit\|resets.*am\|resets.*pm\|quota.*exceeded\|too many requests'; then
+        echo "[loop] ⚠ API rate limit detected. Stopping session."
+        log_event "rate_limit" "$COST" "stopped"
+        break
+      fi
     fi
 
     # Show tool summary
