@@ -271,7 +271,14 @@ echo "[loop] Found $TASK_COUNT tasks"
 init_state "$TASKS"
 
 # Create session branch
-MAIN_BRANCH=$(git -C "$PROJECT_DIR" symbolic-ref --short HEAD 2>/dev/null || echo "main")
+# Detect the actual main branch (not the current branch, which may be auto/*)
+if git -C "$PROJECT_DIR" show-ref --verify --quiet refs/heads/main 2>/dev/null; then
+  MAIN_BRANCH="main"
+elif git -C "$PROJECT_DIR" show-ref --verify --quiet refs/heads/master 2>/dev/null; then
+  MAIN_BRANCH="master"
+else
+  MAIN_BRANCH=$(git -C "$PROJECT_DIR" symbolic-ref --short HEAD 2>/dev/null || echo "main")
+fi
 git -C "$PROJECT_DIR" checkout -b "$SESSION_BRANCH" 2>/dev/null
 echo "[loop] Created branch: $SESSION_BRANCH"
 

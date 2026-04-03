@@ -1,7 +1,7 @@
 # TODOS
 
 - [x] Fix operator precedence bug in `detect_test_command` (loop.sh:115) — the `||`/`&&` condition `[ -f pytest.ini ] || [ -f pyproject.toml ] && grep pytest` groups incorrectly; wrap in explicit subshell or use `{}`  so pytest.ini-only projects don't false-positive into the pytest path.
-- [ ] Fix MAIN_BRANCH detection (loop.sh:254) — `git symbolic-ref --short HEAD` captures the current branch, so re-running while on an `auto/` branch uses it as the base; detect the actual main/master branch by checking `git branch` for main or master instead.
+- [x] Fix MAIN_BRANCH detection (loop.sh:274) — `git symbolic-ref --short HEAD` captures the current branch, so re-running while on an `auto/` branch uses it as the base; detect the actual main/master branch by checking `git show-ref` for main or master instead.
 - [ ] Fix `verify_result` (loop.sh:146) to detect untracked files created by CC — `git diff --quiet HEAD` only sees tracked-file changes, so newly created files are silently ignored; use `git status --porcelain` to also catch untracked files.
 - [ ] Register a cleanup trap in loop.sh for SIGTERM/ERR that removes the `CC_STREAM_FILE` temp file so `/tmp/autonomous-cc-*` files don't accumulate on unexpected exits.
 - [ ] Add startup dependency checks in loop.sh for required commands (`jq`, `claude`, `git`, `timeout`) and exit with a clear error message listing which ones are missing.
