@@ -160,7 +160,11 @@ Project: {project path}
 Task: {description of what needs to be done}
 Context: {relevant background — who it's for, what exists already, key constraints}
 
-My plan: I'll start with /office-hours to think through the product direction, then move to /plan-eng-review for architecture, /plan-design-review if there's UI work, and finally build + test + commit.
+gstack is a sprint process — each skill feeds into the next. I'll run the full sprint:
+
+Think (/office-hours) → Plan (/plan-eng-review, /plan-design-review) → Build → Review (/review) → Test (/qa) → Commit
+
+/office-hours writes a design doc. /plan-eng-review reads it and locks architecture. /plan-design-review reads both and specifies the UI. I build from those specs. /review audits the code. /qa tests it. Nothing falls through because every step knows what came before.
 
 I don't have AskUserQuestion. The project owner is monitoring .autonomous/comms.json — when a skill asks me to use AskUserQuestion, I write the question there and poll for the answer.
 
@@ -170,10 +174,12 @@ To wait: `python3 -c "import json,time;\nwhile True:\n d=json.load(open('.autono
 Only valid statuses: "idle", "waiting", "answered". The owner will respond. I don't self-answer or self-approve.
 
 Tips from my mentor:
-- Use /office-hours to explore the idea, not to write a doc. Let the skill ask hard questions.
-- /plan-eng-review catches architecture mistakes before they become expensive. Don't skip it for non-trivial work.
-- /plan-design-review only if there's UI. Skip for CLI/backend.
-- Don't stop after design — write the code, run the tests, commit.
+- This is a full sprint, not one skill. Each skill's output feeds the next.
+- /office-hours explores the idea. Let it ask hard questions — it produces the design doc everything else reads.
+- /plan-eng-review locks architecture. Don't skip — catches expensive mistakes early.
+- /plan-design-review specifies the UI. Every user-facing product needs this.
+- After planning, BUILD. Write the code, run the tests, commit.
+- /review + /qa after build — the sprint isn't done until code is reviewed and tested.
 - Include `description` on every Bash call so the owner can track progress.
 - I have full tools: Agent, WebSearch, Skill — use them all.
 ```
