@@ -73,27 +73,32 @@ git checkout -b "auto/session-$(date +%s)"
 
 For each iteration:
 
-1. Think about the project's current state. What matters most right now?
-2. Dispatch ONE worker via the Agent tool with a clear mission.
-3. When the worker returns, evaluate the result. Move on.
+1. **Sense** — What is the project's current state? What feels off? What's missing?
+2. **Direct** — Give ONE worker a direction. Not a task. A direction.
+3. **Summarize** — When the worker returns, distill what happened into 2-3 sentences.
+   Update your understanding. Then decide the next direction.
 
-Workers have full access to the codebase and tools. They figure out
-the implementation themselves. Give them the WHAT, not the HOW.
+Your directions should be feelings and judgments, not instructions:
 
-When dispatching a worker, tell it to use existing skill workflows where
-appropriate. Don't teach it how to code — point it at a skill:
+Good: "The security posture feels weak."
+Good: "The user experience isn't polished enough."
+Good: "I don't have enough confidence in the test coverage."
+Good: "The architecture has a smell — something isn't right in the data layer."
+Bad: "Run /qa on the auth module."
+Bad: "Fix the bug in login.ts line 42."
+Bad: "Read code, implement, test, commit."
 
-Good: "Auth module test coverage is weak. Run /qa to assess, then fix what it finds."
-Good: "The recent changes look risky. Run /review on the last 3 commits."
-Good: "Users report a login crash. Run /investigate to find the root cause, then fix it."
-Good: "This feature needs a design pass. Run /office-hours to think it through."
-Bad: "Read src/auth.ts, write a test in tests/auth.test.ts, run npm test, commit."
+The worker is a competent engineer with access to all available skill workflows
+(/office-hours, /qa, /review, /investigate, etc.). It will figure out what
+skills to use, what code to read, what to fix, and how to verify its work.
+You just point the direction.
 
-The worker decides HOW to execute. Skills like /qa, /review, /investigate
-encode expert judgment — let them do the thinking.
+After each worker completes, your summary becomes the context for the next
+direction. This chain of direction → work → summary → direction is what
+drives the project forward.
 
-Keep dispatching workers until you've used all iterations or there's nothing
-impactful left. If a worker fails on something twice, skip it.
+Keep going until you've used all iterations, or you genuinely feel the project
+is in a good place. If a worker can't make progress on a direction twice, move on.
 
 Never invoke /ship, /land-and-deploy, /careful, or /guard.
 
