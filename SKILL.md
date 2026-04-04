@@ -97,57 +97,50 @@ echo '{"status":"idle"}' > .autonomous/comms.json
    - Feels fragile? → "Run /qa on this codebase."
    - Bug? → "Run /investigate on: ..."
 
-   Dispatch via Bash:
+   Write the worker prompt, then dispatch in a tmux window so the user
+   can watch the worker in real-time:
+
    ```bash
    cat > .autonomous/worker-prompt.md << 'WORKER_EOF'
    [worker context + direction — see "Worker Prompt" section below]
    WORKER_EOF
 
-   claude -p "$(cat .autonomous/worker-prompt.md)" \
-     --allowedTools 'Bash,Read,Edit,Write,Grep,Glob,Skill,ToolSearch,WebSearch,WebFetch,Agent' \
-     --permission-mode auto \
-     2>.autonomous/worker-stderr.log &
-   WORKER_PID=$!
-   echo "Worker started: PID=$WORKER_PID"
+   # Dispatch in tmux (visible to user) or fall back to background
+   if command -v tmux &>/dev/null && tmux info &>/dev/null; then
+     tmux new-window -n "worker" \
+       "cd $(pwd) && claude -p \"\$(cat .autonomous/worker-prompt.md)\" --dangerously-skip-permissions; echo 'Worker done. Press enter.'; read"
+     echo "Worker launched in tmux window 'worker'"
+   else
+     claude -p "$(cat .autonomous/worker-prompt.md)" --dangerously-skip-permissions \
+       > .autonomous/worker-output.log 2>&1 &
+     echo "Worker PID: $!"
+   fi
    ```
 
-   The worker is a **full Claude session** — it has Agent tool, WebSearch,
-   all MCP tools, everything. gstack skills will work exactly as designed,
-   including internal subagent spawns for adversarial reviews.
+   The worker is a **full Claude session** — it has Agent, WebSearch,
+   all MCP tools. gstack skills work exactly as designed, including
+   internal subagent spawns for adversarial reviews.
 
-3. **Respond** — The worker can't use AskUserQuestion (it's `claude -p`,
-   non-interactive). Instead it writes questions to `.autonomous/comms.json`.
-   You poll and answer.
+3. **Respond** — The worker writes questions to `.autonomous/comms.json`.
+   You poll and answer. Run the master-watch script for dual-channel
+   monitoring (comms + worker activity):
 
-   Poll (run in background):
    ```bash
-   python3 << 'POLL'
-   import json, time, os
-   path = os.path.join(os.getcwd(), '.autonomous/comms.json')
+   bash scripts/master-watch.sh "$(pwd)"
+   ```
+
+   Or manual poll + answer:
+   ```bash
+   # poll
+   python3 -c "import json,time
    while True:
-       try:
-           d = json.load(open(path))
-           if d.get('status') == 'waiting':
-               for q in d.get('questions', []):
-                   print(f"\n[{q.get('header','')}] {q['question']}")
-                   for i, o in enumerate(q.get('options', [])):
-                       print(f"  {chr(65+i)}) {o['label']}")
-               print(f"\nrec: {d.get('rec','—')}")
-               break
-       except: pass
-       time.sleep(3)
-   POLL
-   ```
+     d=json.load(open('.autonomous/comms.json'))
+     if d.get('status')=='waiting': print(json.dumps(d,indent=2)); break
+     time.sleep(3)"
 
-   Answer — pick the letter, optional note:
-   ```bash
-   python3 -c "
-   import json
-   json.dump({'status':'answered','answers':['A']}, open('.autonomous/comms.json','w'))
-   "
+   # answer
+   python3 -c "import json; json.dump({'status':'answered','answers':['A']}, open('.autonomous/comms.json','w'))"
    ```
-
-   Then restart the poll. Repeat until worker finishes.
 
    **You are the decision-maker.** Override worker recommendations when
    your product intuition disagrees.
