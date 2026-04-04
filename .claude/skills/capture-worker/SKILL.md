@@ -89,34 +89,18 @@ for line in open(sys.argv[1]):
 " "$AGENT_JSONL" "$SESSION_ID" > "$PROJECT_DIR/$SESSION_ID.jsonl"
 ```
 
-3. Copy sibling subagent files (also rewrite cwd):
+3. Copy subagent files into `{sessionId}/subagents/` (viewer expects this path):
 ```bash
 PARENT_DIR=$(dirname "$AGENT_JSONL")
-if ls "$PARENT_DIR"/agent-*.jsonl 1>/dev/null 2>&1; then
-  mkdir -p "$PROJECT_DIR/$SESSION_ID"
-  for sub in "$PARENT_DIR"/agent-*.jsonl; do
-    SUB_NAME=$(basename "$sub")
-    python3 -c "
-import json, sys
-new_sid = sys.argv[2]
-for line in open(sys.argv[1]):
-    line = line.strip()
-    if not line: continue
-    try:
-        obj = json.loads(line)
-        if 'cwd' in obj:
-            obj['cwd'] = '/auto-debug'
-        if 'sessionId' in obj:
-            obj['sessionId'] = new_sid
-        if 'isSidechain' in obj:
-            obj['isSidechain'] = False
-        print(json.dumps(obj))
-    except:
-        print(line)
-" "$sub" "$SESSION_ID" > "$PROJECT_DIR/$SESSION_ID/$SUB_NAME"
-  done
-  cp "$PARENT_DIR"/agent-*.meta.json "$PROJECT_DIR/$SESSION_ID/" 2>/dev/null || true
-fi
+# Check both: direct subagents/ dir and session-named subdir
+for SEARCH_DIR in "$PARENT_DIR/subagents" "$PARENT_DIR"; do
+  if ls "$SEARCH_DIR"/agent-*.jsonl 1>/dev/null 2>&1; then
+    mkdir -p "$PROJECT_DIR/$SESSION_ID/subagents"
+    cp "$SEARCH_DIR"/agent-*.jsonl "$PROJECT_DIR/$SESSION_ID/subagents/"
+    cp "$SEARCH_DIR"/agent-*.meta.json "$PROJECT_DIR/$SESSION_ID/subagents/" 2>/dev/null || true
+    break
+  fi
+done
 ```
 
 4. Save the label:
