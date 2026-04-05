@@ -1,12 +1,30 @@
 #!/usr/bin/env bash
 # Master watch — monitors both comms.json AND worker activity
-# Usage: bash scripts/master-watch.sh /path/to/project [worker-pid]
-#
-# Dual-channel monitoring:
-#   1. comms.json — questions from the worker
-#   2. Worker session JSONL — tool calls, progress, errors
 
 set -euo pipefail
+
+usage() {
+  cat << 'EOF'
+Usage: master-watch.sh [project-dir] [worker-pid]
+
+Dual-channel monitor for autonomous-skill workers. Watches both:
+  1. comms.json — questions from the worker needing answers
+  2. Worker session JSONL — tool calls, progress, errors
+
+Arguments:
+  project-dir   Path to the project (default: current directory)
+  worker-pid    PID of the worker process (optional, for liveness checks)
+
+Requires: .autonomous/comms.json must exist (worker must be running).
+Press Ctrl+C to stop.
+EOF
+  exit 0
+}
+
+# Handle --help / -h before anything else
+case "${1:-}" in
+  -h|--help|help) usage ;;
+esac
 
 command -v python3 &>/dev/null || { echo "ERROR: python3 required but not found" >&2; exit 1; }
 
@@ -29,6 +47,8 @@ find_session() {
 
 LAST_LINES=0
 LAST_STATUS="idle"
+_CACHED_SESSION=""
+_CACHE_TIME=0
 
 echo "══════════════════════════════════════"
 echo " Master Watch — $PROJECT"
@@ -61,7 +81,13 @@ DISPLAY
   LAST_STATUS="$STATUS"
 
   # --- Channel 2: Worker session activity ---
-  SESSION=$(find_session)
+  # Cache session path for 30s to avoid running find every 3s
+  NOW=$(date +%s)
+  if [ -z "$_CACHED_SESSION" ] || [ ! -f "$_CACHED_SESSION" ] || [ $((NOW - _CACHE_TIME)) -ge 30 ]; then
+    _CACHED_SESSION=$(find_session)
+    _CACHE_TIME=$NOW
+  fi
+  SESSION="$_CACHED_SESSION"
   if [ -n "$SESSION" ]; then
     LINES=$(wc -l < "$SESSION" | tr -d ' ')
     if [ "$LINES" -gt "$LAST_LINES" ]; then

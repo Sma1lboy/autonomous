@@ -1,19 +1,59 @@
 #!/usr/bin/env bash
 # conductor-state.sh — State management for the multi-sprint conductor.
 # Manages .autonomous/conductor-state.json with atomic writes and PID locking.
-#
-# Usage:
-#   conductor-state.sh init <project-dir> <mission> [max-sprints]
-#   conductor-state.sh read <project-dir>
-#   conductor-state.sh sprint-start <project-dir> <direction>
-#   conductor-state.sh sprint-end <project-dir> <status> <summary> [commits-json] [direction-complete]
-#   conductor-state.sh phase <project-dir>
-#   conductor-state.sh explore-pick <project-dir>
-#   conductor-state.sh explore-score <project-dir> <dimension> <score>
-#   conductor-state.sh lock <project-dir>
-#   conductor-state.sh unlock <project-dir>
 
 set -euo pipefail
+
+usage() {
+  cat << 'EOF'
+Usage: conductor-state.sh <command> <project-dir> [args...]
+
+State management for the autonomous-skill conductor. Manages
+.autonomous/conductor-state.json with atomic writes and PID locking.
+
+Commands:
+  init <project-dir> <mission> [max-sprints]
+      Initialize a new conductor session (default max-sprints: 10)
+
+  read <project-dir>
+      Read current conductor state as JSON
+
+  sprint-start <project-dir> <direction>
+      Register a new sprint with the given direction
+
+  sprint-end <project-dir> <status> <summary> [commits-json] [direction-complete]
+      Complete the current sprint, update counters, evaluate phase transition
+
+  phase <project-dir>
+      Print current phase ("directed" or "exploring")
+
+  explore-pick <project-dir>
+      Pick the weakest unaudited dimension for exploration
+
+  explore-score <project-dir> <dimension> <score>
+      Score a dimension (0-10) after auditing it
+      Dimensions: test_coverage, error_handling, security, code_quality,
+                  documentation, architecture, performance, dx
+
+  lock <project-dir>
+      Acquire PID lock (prevents concurrent conductors)
+
+  unlock <project-dir>
+      Release PID lock
+
+Examples:
+  bash scripts/conductor-state.sh init ./my-project "build REST API" 5
+  bash scripts/conductor-state.sh read ./my-project
+  bash scripts/conductor-state.sh sprint-start ./my-project "add auth middleware"
+  bash scripts/conductor-state.sh phase ./my-project
+EOF
+  exit 0
+}
+
+# Handle --help / -h before anything else
+case "${1:-}" in
+  -h|--help|help) usage ;;
+esac
 
 command -v python3 &>/dev/null || { echo "ERROR: python3 required but not found" >&2; exit 1; }
 
@@ -62,12 +102,12 @@ read_state() {
   content=$(python3 -c "
 import json, sys
 try:
-    with open('$STATE_FILE') as f:
+    with open(sys.argv[1]) as f:
         d = json.load(f)
     json.dump(d, sys.stdout)
 except (json.JSONDecodeError, FileNotFoundError):
     sys.exit(1)
-" 2>/dev/null) || { echo "{}"; return 0; }
+" "$STATE_FILE" 2>/dev/null) || { echo "{}"; return 0; }
   echo "$content"
 }
 
@@ -79,30 +119,30 @@ read_state_strict() {
   python3 -c "
 import json, sys
 try:
-    with open('$STATE_FILE') as f:
+    with open(sys.argv[1]) as f:
         d = json.load(f)
     json.dump(d, sys.stdout)
 except (json.JSONDecodeError, FileNotFoundError):
     sys.exit(1)
-" 2>/dev/null || return 1
+" "$STATE_FILE" 2>/dev/null || return 1
 }
 
 # Write state atomically via python3 (ensures valid JSON)
 write_state() {
   local json_str="$1"
   python3 -c "
-import json, sys
+import json, sys, os
 try:
     d = json.loads(sys.argv[1])
-    tmp = '$STATE_FILE.tmp.$$'
+    state_file = sys.argv[2]
+    tmp = state_file + '.tmp.' + str(os.getpid())
     with open(tmp, 'w') as f:
         json.dump(d, f, indent=2)
-    import os
-    os.rename(tmp, '$STATE_FILE')
+    os.rename(tmp, state_file)
 except Exception as e:
     print(f'ERROR: {e}', file=sys.stderr)
     sys.exit(1)
-" "$json_str"
+" "$json_str" "$STATE_FILE"
 }
 
 # ── Lock management ───────────────────────────────────────────────────────
@@ -147,17 +187,17 @@ cmd_init() {
   local session_id="conductor-$(date +%s)"
   local max_directed
   # 70% of total sprints for directed phase
-  max_directed=$(python3 -c "print(max(1, int($max_sprints * 0.7)))")
+  max_directed=$(python3 -c "import sys; print(max(1, int(int(sys.argv[1]) * 0.7)))" "$max_sprints")
 
   local state
   state=$(python3 -c "
 import json, sys
 d = {
-    'session_id': '$session_id',
-    'mission': sys.argv[1],
+    'session_id': sys.argv[1],
+    'mission': sys.argv[2],
     'phase': 'directed',
-    'max_sprints': $max_sprints,
-    'max_directed_sprints': $max_directed,
+    'max_sprints': int(sys.argv[3]),
+    'max_directed_sprints': int(sys.argv[4]),
     'sprints': [],
     'consecutive_complete': 0,
     'consecutive_zero_commits': 0,
@@ -173,7 +213,7 @@ d = {
     }
 }
 print(json.dumps(d))
-" "$mission")
+" "$session_id" "$mission" "$max_sprints" "$max_directed")
 
   write_state "$state"
   echo "$session_id"
@@ -207,8 +247,7 @@ print(json.dumps(d))
 
   write_state "$updated"
   # Print sprint number
-  python3 -c "import json; print(len(json.loads('$updated'.replace(\"'\", \"\\\\'\"))['sprints']))" 2>/dev/null || \
-    python3 -c "import json,sys; print(len(json.loads(sys.argv[1])['sprints']))" "$updated"
+  python3 -c "import json,sys; print(len(json.loads(sys.argv[1])['sprints']))" "$updated"
 }
 
 cmd_sprint_end() {

@@ -4,33 +4,10 @@
 
 set -euo pipefail
 
+source "$(dirname "${BASH_SOURCE[0]}")/test_helpers.sh"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONDUCTOR="$SCRIPT_DIR/../scripts/conductor-state.sh"
-
-# ── Minimal test framework ──────────────────────────────────────────────────
-PASS=0; FAIL=0
-
-ok()   { echo "  ok  $*"; ((PASS++)) || true; }
-fail() { echo "  FAIL $*"; ((FAIL++)) || true; }
-
-assert_eq() {
-  [ "$1" = "$2" ] && ok "$3" || fail "$3 — got '$1', want '$2'"
-}
-assert_contains() {
-  echo "$1" | grep -q "$2" && ok "$3" || fail "$3 — '$2' not in output"
-}
-assert_not_contains() {
-  echo "$1" | grep -q "$2" && fail "$3 — '$2' found in output" || ok "$3"
-}
-assert_file_exists() {
-  [ -f "$1" ] && ok "$2" || fail "$2 — file not found: $1"
-}
-
-# ── Temp dir management ─────────────────────────────────────────────────────
-TMPDIRS=()
-new_tmp() { local d; d=$(mktemp -d); TMPDIRS+=("$d"); echo "$d"; }
-cleanup() { [ ${#TMPDIRS[@]} -gt 0 ] && rm -rf "${TMPDIRS[@]}" || true; }
-trap cleanup EXIT
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -851,10 +828,77 @@ print('ok' if all_ok else 'fail')
 " 2>/dev/null || echo "fail")
 assert_eq "$VALID" "ok" "all scores valid with only test files (no div-by-zero)"
 
-# ── Summary ─────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# 39. Security — path with single quotes
+# ═══════════════════════════════════════════════════════════════════════════
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo " Results: $PASS passed, $FAIL failed"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "39. Security — path with single quotes"
+T=$(new_tmp)
+TRICKY="$T/it's a test"
+mkdir -p "$TRICKY"
+SESSION_ID=$(bash "$CONDUCTOR" init "$TRICKY" "test mission" 5 2>&1)
+assert_contains "$SESSION_ID" "conductor-" "init works with single-quote path"
+assert_file_exists "$TRICKY/.autonomous/conductor-state.json" "state created in quote path"
+
+# Read state back
+STATE=$(bash "$CONDUCTOR" read "$TRICKY" 2>&1)
+MISSION=$(python3 -c "import json,sys; print(json.loads(sys.argv[1]).get('mission',''))" "$STATE")
+assert_eq "$MISSION" "test mission" "read works with single-quote path"
+
+# Sprint start/end with quote path
+SPRINT=$(bash "$CONDUCTOR" sprint-start "$TRICKY" "test direction" 2>&1)
+assert_eq "$SPRINT" "1" "sprint-start works with single-quote path"
+
+PHASE=$(bash "$CONDUCTOR" sprint-end "$TRICKY" "complete" "done" "[]" "false" 2>&1)
+assert_eq "$PHASE" "directed" "sprint-end works with single-quote path"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 40. Security — mission with special characters
+# ═══════════════════════════════════════════════════════════════════════════
 echo ""
-[ "$FAIL" -eq 0 ]
+echo "40. Security — mission with special characters"
+T=$(new_tmp)
+SESSION_ID=$(bash "$CONDUCTOR" init "$T" "build 'feature' with \"quotes\" & \$vars" 5 2>&1)
+assert_contains "$SESSION_ID" "conductor-" "init with special char mission"
+STATE=$(bash "$CONDUCTOR" read "$T" 2>&1)
+MISSION=$(python3 -c "import json,sys; print(json.loads(sys.argv[1]).get('mission',''))" "$STATE")
+assert_contains "$MISSION" "feature" "mission with quotes preserved"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 41. Security — direction with special characters
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "41. Security — direction with special characters"
+T=$(new_tmp)
+bash "$CONDUCTOR" init "$T" "test" 5 > /dev/null
+SPRINT=$(bash "$CONDUCTOR" sprint-start "$T" "fix 'bug' in module" 2>&1)
+assert_eq "$SPRINT" "1" "sprint-start with single-quote direction"
+STATE=$(bash "$CONDUCTOR" read "$T" 2>&1)
+DIR=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['sprints'][0]['direction'])" "$STATE")
+assert_contains "$DIR" "bug" "direction with quotes preserved"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 42. --help flag
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "42. --help flag"
+HELP=$(bash "$CONDUCTOR" --help 2>&1)
+assert_contains "$HELP" "Usage:" "--help shows usage"
+assert_contains "$HELP" "init" "--help lists init command"
+assert_contains "$HELP" "sprint-start" "--help lists sprint-start command"
+assert_contains "$HELP" "explore-pick" "--help lists explore-pick command"
+assert_contains "$HELP" "Examples" "--help includes examples"
+
+echo ""
+echo "43. -h and help variants"
+HELP_SHORT=$(bash "$CONDUCTOR" -h 2>&1)
+assert_contains "$HELP_SHORT" "Usage:" "-h also shows usage"
+HELP_WORD=$(bash "$CONDUCTOR" help 2>&1)
+assert_contains "$HELP_WORD" "Usage:" "'help' subcommand also shows usage"
+
+echo ""
+echo "44. --help exits 0"
+bash "$CONDUCTOR" --help >/dev/null 2>&1
+assert_eq "$?" "0" "--help exits with code 0"
+
+print_results

@@ -1,11 +1,31 @@
 #!/usr/bin/env bash
 # Master polling loop — runs in a separate terminal
-# Usage: bash scripts/master-poll.sh /path/to/project
-#
-# Continuously polls .autonomous/comms.json for worker questions.
-# When a question arrives, displays it and waits for master's answer.
 
 set -euo pipefail
+
+usage() {
+  cat << 'EOF'
+Usage: master-poll.sh [project-dir]
+
+Interactive polling loop for answering worker questions.
+Run this in a separate terminal while a worker is active.
+
+Continuously polls .autonomous/comms.json for worker questions.
+When a question arrives, displays it and waits for your answer.
+
+Arguments:
+  project-dir   Path to the project (default: current directory)
+
+Requires: .autonomous/comms.json must exist (worker must be running).
+Press Ctrl+C to stop.
+EOF
+  exit 0
+}
+
+# Handle --help / -h before anything else
+case "${1:-}" in
+  -h|--help|help) usage ;;
+esac
 
 command -v python3 &>/dev/null || { echo "ERROR: python3 required but not found" >&2; exit 1; }
 

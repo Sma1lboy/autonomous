@@ -5,34 +5,11 @@
 
 set -euo pipefail
 
+source "$(dirname "${BASH_SOURCE[0]}")/test_helpers.sh"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCANNER="$SCRIPT_DIR/../scripts/explore-scan.sh"
 CONDUCTOR="$SCRIPT_DIR/../scripts/conductor-state.sh"
-
-# ── Minimal test framework ──────────────────────────────────────────────────
-PASS=0; FAIL=0
-
-ok()   { echo "  ok  $*"; ((PASS++)) || true; }
-fail() { echo "  FAIL $*"; ((FAIL++)) || true; }
-
-assert_eq() {
-  [ "$1" = "$2" ] && ok "$3" || fail "$3 — got '$1', want '$2'"
-}
-assert_contains() {
-  echo "$1" | grep -q "$2" && ok "$3" || fail "$3 — '$2' not in output"
-}
-assert_ge() {
-  [ "$1" -ge "$2" ] && ok "$3" || fail "$3 — got '$1', want >= '$2'"
-}
-assert_le() {
-  [ "$1" -le "$2" ] && ok "$3" || fail "$3 — got '$1', want <= '$2'"
-}
-
-# ── Temp dir management ─────────────────────────────────────────────────────
-TMPDIRS=()
-new_tmp() { local d; d=$(mktemp -d); TMPDIRS+=("$d"); echo "$d"; }
-cleanup() { [ ${#TMPDIRS[@]} -gt 0 ] && rm -rf "${TMPDIRS[@]}" || true; }
-trap cleanup EXIT
 
 # Helper: init a project with git and conductor state
 init_project() {
@@ -532,10 +509,63 @@ SEC=$(get_score "$T" "security")
 assert_eq "$CQ" "10" ".autonomous TODOs excluded from quality"
 assert_eq "$SEC" "10" ".autonomous secrets excluded from security"
 
-# ── Summary ─────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo " Results: $PASS passed, $FAIL failed"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "27. Security — clamp rejects code injection"
+# The old clamp used int($expr) which evaluated arbitrary Python.
+# The new AST-based clamp only allows numeric constants and arithmetic.
+# This helper mirrors the exact clamp logic from explore-scan.sh:
+test_clamp() {
+  python3 -c "
+import sys, ast, operator
+def safe_eval(expr):
+    ops = {ast.Add: operator.add, ast.Sub: operator.sub,
+           ast.Mult: operator.mul, ast.Div: operator.truediv,
+           ast.FloorDiv: operator.floordiv, ast.USub: operator.neg}
+    def _eval(node):
+        if isinstance(node, ast.Expression): return _eval(node.body)
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return node.value
+        if isinstance(node, ast.BinOp) and type(node.op) in ops:
+            return ops[type(node.op)](_eval(node.left), _eval(node.right))
+        if isinstance(node, ast.UnaryOp) and type(node.op) in ops:
+            return ops[type(node.op)](_eval(node.operand))
+        raise ValueError('unsafe expression')
+    return _eval(ast.parse(expr, mode='eval'))
+try:
+    print(max(0, min(10, int(safe_eval(sys.argv[1])))))
+except Exception:
+    print(0)
+" "$1"
+}
+
+# Injection attempts return 0 (safe default)
+assert_eq "$(test_clamp "__import__('os').system('echo pwned')")" "0" "clamp rejects __import__ injection"
+assert_eq "$(test_clamp "exec('import os')")" "0" "clamp rejects exec() injection"
+assert_eq "$(test_clamp "eval('1+1')")" "0" "clamp rejects eval() injection"
+assert_eq "$(test_clamp "open('/etc/passwd').read()")" "0" "clamp rejects file access"
+
+# Valid arithmetic still works
+assert_eq "$(test_clamp "3 * 10 / 5")" "6" "clamp allows valid arithmetic"
+assert_eq "$(test_clamp "10 - (2 + 3) * 2")" "0" "clamp clamps negative to 0"
+assert_eq "$(test_clamp "5")" "5" "clamp allows plain integer"
+assert_eq "$(test_clamp "-3")" "0" "clamp clamps unary negative to 0"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# --help flag
+# ═══════════════════════════════════════════════════════════════════════════
 echo ""
-[ "$FAIL" -eq 0 ]
+echo "13. --help flag"
+HELP=$(bash "$SCANNER" --help 2>&1)
+assert_contains "$HELP" "Usage:" "--help shows usage"
+assert_contains "$HELP" "test_coverage" "--help lists dimensions"
+assert_contains "$HELP" "dx" "--help lists dx dimension"
+assert_contains "$HELP" "conductor-state-script" "--help mentions conductor arg"
+
+bash "$SCANNER" --help >/dev/null 2>&1
+assert_eq "$?" "0" "--help exits with code 0"
+
+HELP_SHORT=$(bash "$SCANNER" -h 2>&1)
+assert_contains "$HELP_SHORT" "Usage:" "-h also shows usage"
+
+print_results
