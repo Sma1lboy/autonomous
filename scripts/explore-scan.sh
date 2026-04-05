@@ -114,8 +114,8 @@ score "documentation" "$(clamp "$_ds")"
 # 6. architecture: fewer files > 300 lines = better
 _big=$(find "$PROJECT" -type f \( "${SRC_EXTS[@]}" \) \
   -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/.autonomous/*' \
-  -not -path '*/vendor/*' -not -path '*/dist/*' \
-  2>/dev/null -exec awk 'END{if(NR>300)print FILENAME}' {} + 2>/dev/null \
+  -not -path '*/vendor/*' -not -path '*/dist/*' -not -path '*/build/*' \
+  2>/dev/null -exec awk 'END{if(NR>300)print FILENAME}' {} \; 2>/dev/null \
   | wc -l | tr -d ' ')
 score "architecture" "$(clamp "10 - $_big * 2")"
 
