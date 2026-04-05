@@ -85,11 +85,11 @@ The conductor tracks multi-sprint progress in `.autonomous/conductor-state.json`
 ## Testing
 
 ```bash
-bash tests/test_conductor.sh    # 60 tests: state management, phase transitions, exploration
+bash tests/test_conductor.sh    # 70 tests: state management, phase transitions, exploration, input validation
 bash tests/test_comms.sh        # 26 tests: comms.json protocol
 bash tests/test_persona.sh      # 15 tests: OWNER.md generation
 bash tests/test_explore_scan.sh # 31 tests: 8-dimension scoring heuristics, edge cases
-bash tests/test_loop.sh         #  9 tests: standalone launcher args, env vars, persona
+bash tests/test_loop.sh         # 12 tests: standalone launcher args, env vars, persona, error handling
 shellcheck scripts/*.sh         # lint all shell scripts
 ```
 
