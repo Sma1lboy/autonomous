@@ -34,9 +34,9 @@ if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ] || [ "${1:-}" = "help" ]; then
   exit 0
 fi
 
-PROJECT_DIR="${1:?Usage: write-summary.sh <project_dir> <status> <summary>}"
-STATUS="${2:?Usage: write-summary.sh <project_dir> <status> <summary>}"
-SUMMARY="${3:?Usage: write-summary.sh <project_dir> <status> <summary>}"
+PROJECT_DIR="${1:?Usage: bash write-summary.sh <project_dir> <status> <summary> [iterations] [direction_complete] [sprint_num]}"
+STATUS="${2:?Usage: bash write-summary.sh <project_dir> <status> <summary> [iterations] [direction_complete] [sprint_num]}"
+SUMMARY="${3:?Usage: bash write-summary.sh <project_dir> <status> <summary> [iterations] [direction_complete] [sprint_num]}"
 ITERATIONS="${4:-1}"
 DIR_COMPLETE="${5:-true}"
 SPRINT_NUM="${6:-}"
@@ -62,7 +62,7 @@ with open('.autonomous/sprint-summary.json', 'w') as f:
 print(json.dumps(summary, indent=2))
 " "$STATUS" "$SUMMARY" "$ITERATIONS" "$DIR_COMPLETE"; then
   # python3 failed — write minimal fallback so conductor doesn't hang forever
-  echo "WARNING: write-summary.sh python3 failed, writing fallback summary" >&2
+  echo "WARNING: write-summary.sh python3 failed — check that python3 is installed and working (try: python3 --version). Writing fallback summary" >&2
   mkdir -p .autonomous
   cat > .autonomous/sprint-summary.json << FALLBACK_EOF
 {"status":"blocked","commits":[],"summary":"write-summary.sh failed: python3 error","iterations_used":0,"direction_complete":false}

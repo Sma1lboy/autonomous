@@ -5,6 +5,8 @@
 
 set -euo pipefail
 
+source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+
 usage() {
   cat << 'EOF'
 Usage: session-report.sh <project-dir> [--detail N] [--json] [--diff] [--merge-plan]
@@ -444,19 +446,34 @@ fi
 
 # ── Table mode (default) ────────────────────────────────────────────────
 
+CLR_RED="$_CLR_RED" CLR_GREEN="$_CLR_GREEN" CLR_YELLOW="$_CLR_YELLOW" CLR_BOLD="$_CLR_BOLD" CLR_RESET="$_CLR_RESET" \
 python3 -c "
-import json, sys
+import json, sys, os
 
 data = json.loads(sys.argv[1])
 sprints = data['sprints']
 totals = data['totals']
 
+# Colors from env (empty when piped)
+R = os.environ.get('CLR_RED', '')
+G = os.environ.get('CLR_GREEN', '')
+Y = os.environ.get('CLR_YELLOW', '')
+B = os.environ.get('CLR_BOLD', '')
+X = os.environ.get('CLR_RESET', '')
+
+def colorize_status(s):
+    if s == 'complete': return f'{G}{s}{X}'
+    if s == 'blocked': return f'{R}{s}{X}'
+    return f'{Y}{s}{X}'
+
+def colorize_rating(r):
+    if r == 'recommended': return f'{G}{r}{X}'
+    return f'{Y}{r}{X}'
+
 def qg_label(val):
-    if val is True:
-        return 'pass'
-    elif val is False:
-        return 'fail'
-    return '—'
+    if val is True: return f'{G}pass{X}'
+    elif val is False: return f'{R}fail{X}'
+    return chr(0x2014)
 
 # Header
 print(f'{\"Sprint\":<7} | {\"Status\":<10} | {\"Commits\":<7} | {\"QG\":<4} | {\"Cost\":<8} | {\"Rating\":<11} | Summary')
@@ -468,13 +485,17 @@ for s in sprints:
         summary = summary[:57] + '...'
     qg = qg_label(s.get('quality_gate_passed'))
     cost = s.get('cost_usd', 0)
-    cost_str = '\$' + f'{cost:.2f}' if cost else '—'
-    print(f'{s[\"number\"]:<7} | {s[\"status\"]:<10} | {s[\"commit_count\"]:<7} | {qg:<4} | {cost_str:<8} | {s[\"rating\"]:<11} | {summary}')
+    cost_str = '\$' + f'{cost:.2f}' if cost else chr(0x2014)
+    # Padded values with color (pad before colorizing to avoid ANSI length issues)
+    status_padded = f'{colorize_status(s[\"status\"])}{\" \" * max(0, 10 - len(s[\"status\"]))}'
+    rating_padded = f'{colorize_rating(s[\"rating\"])}{\" \" * max(0, 11 - len(s[\"rating\"]))}'
+    qg_padded = f'{qg}{\" \" * max(0, 4 - (4 if s.get(\"quality_gate_passed\") is None else len(\"pass\")))}'
+    print(f'{s[\"number\"]:<7} | {status_padded} | {s[\"commit_count\"]:<7} | {qg_padded} | {cost_str:<8} | {rating_padded} | {summary}')
 
 session_cost = totals.get('session_cost_usd', 0)
 cost_line = ', \$' + f'{session_cost:.2f} cost' if session_cost else ''
 print()
-print(f'Total: {totals[\"sprints\"]} sprints, {totals[\"commits\"]} commits, {totals[\"files_changed\"]} files changed{cost_line}')
+print(f'{B}Total: {totals[\"sprints\"]} sprints, {totals[\"commits\"]} commits, {totals[\"files_changed\"]} files changed{cost_line}{X}')
 
 import json as _json
 rl = _json.loads(sys.argv[2])

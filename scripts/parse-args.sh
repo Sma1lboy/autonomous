@@ -41,6 +41,13 @@ if echo "$ARGS" | grep -qF -- '--template'; then
   ARGS=$(echo "$ARGS" | sed 's/--template  *[a-zA-Z0-9-]*//' | sed 's/^  *//' | sed 's/  *$//')
 fi
 
+# Warn on unknown --flags (after --template already extracted)
+for _word in $ARGS; do
+  case "$_word" in
+    --*) echo "Unknown flag: $_word. Valid flags: --template. Run with --help for usage." >&2 ;;
+  esac
+done
+
 if [ -n "$ARGS" ]; then
   if echo "$ARGS" | grep -qi 'unlimited'; then
     _MAX_SPRINTS="unlimited"

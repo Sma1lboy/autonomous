@@ -87,11 +87,11 @@ backlog_lock() {
       local lock_pid=""
       [ -f "$LOCK_DIR/pid" ] && lock_pid=$(cat "$LOCK_DIR/pid" 2>/dev/null || echo "")
       if [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null; then
-        die "Backlog locked by PID $lock_pid"
+        die "Backlog locked by PID $lock_pid. Wait a moment or check if the process is stuck (kill -0 $lock_pid)"
       fi
       # Stale lock, break it
       rm -rf "$LOCK_DIR" 2>/dev/null || true
-      mkdir "$LOCK_DIR" 2>/dev/null || die "Cannot acquire backlog lock"
+      mkdir "$LOCK_DIR" 2>/dev/null || die "Cannot acquire backlog lock. Try: rm -rf $LOCK_DIR"
       break
     fi
     sleep 0.1
@@ -197,7 +197,7 @@ cmd_add() {
   # Validate dimension if provided
   if [ -n "$dimension" ]; then
     local valid_dims="test_coverage error_handling security code_quality documentation architecture performance dx"
-    echo "$valid_dims" | grep -qw "$dimension" || die "Invalid dimension: $dimension"
+    echo "$valid_dims" | grep -qw "$dimension" || die "Invalid dimension: $dimension. Valid: $valid_dims"
   fi
 
   mkdir -p "$STATE_DIR" && chmod 700 "$STATE_DIR"
@@ -355,7 +355,7 @@ for item in items:
         print(json.dumps(item, indent=2))
         sys.exit(0)
 
-print(f'ERROR: item not found: {target_id}', file=sys.stderr)
+print(f'ERROR: item not found: {target_id}. Run: bash scripts/backlog.sh list <project-dir>', file=sys.stderr)
 sys.exit(1)
 " "$state" "$item_id"
 }
@@ -403,7 +403,7 @@ print(json.dumps(d))
 print('---PICKED---')
 print(json.dumps(picked, indent=2))
 " "$state" 2>/dev/null) || {
-    echo "ERROR: no open items in backlog" >&2
+    echo "ERROR: no open items in backlog. Add items first: bash scripts/backlog.sh add <project-dir> <title>" >&2
     return 1
   }
 

@@ -37,7 +37,7 @@ if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ] || [ "${1:-}" = "help" ]; then
   exit 0
 fi
 
-command -v claude &>/dev/null || { echo "ERROR: claude CLI not found" >&2; exit 1; }
+command -v claude &>/dev/null || { echo "ERROR: claude CLI not found. Install from https://docs.anthropic.com/en/docs/claude-code" >&2; exit 1; }
 
 PROJECT_DIR="${1:?Usage: dispatch.sh <project_dir> <prompt_file> <window_name> [worker-id]}"
 PROMPT_FILE="${2:?Usage: dispatch.sh <project_dir> <prompt_file> <window_name> [worker-id]}"
@@ -45,7 +45,7 @@ WINDOW_NAME="${3:?Usage: dispatch.sh <project_dir> <prompt_file> <window_name> [
 WORKER_ID="${4:-}"
 
 if [ ! -f "$PROMPT_FILE" ]; then
-  echo "ERROR: Prompt file not found: $PROMPT_FILE" >&2
+  echo "ERROR: Prompt file not found: $PROMPT_FILE. Check the path or ensure the sprint master wrote this file" >&2
   exit 1
 fi
 
@@ -80,7 +80,7 @@ fi
 
 # Validate isolation mode
 if [[ "$DISPATCH_ISOLATION" != "branch" && "$DISPATCH_ISOLATION" != "worktree" ]]; then
-  echo "WARNING: invalid DISPATCH_ISOLATION '$DISPATCH_ISOLATION', using default 'branch'" >&2
+  echo "WARNING: invalid DISPATCH_ISOLATION '$DISPATCH_ISOLATION' — valid values are 'branch' or 'worktree'. Using default 'branch'" >&2
   DISPATCH_ISOLATION="branch"
 fi
 
@@ -92,7 +92,7 @@ WORKER_CD_DIR="$PROJECT_DIR"
 if [ "$DISPATCH_ISOLATION" = "worktree" ]; then
   WORKTREE_BRANCH="auto/worker-${SAFE_WINDOW_NAME}"
   WT_OUT=$(bash "$SCRIPT_DIR/worktree-manager.sh" create "$PROJECT_DIR" "$WORKTREE_BRANCH" 2>&1) || {
-    echo "ERROR: worktree creation failed: $WT_OUT" >&2
+    echo "ERROR: worktree creation failed. worktree-manager.sh said: $WT_OUT" >&2
     exit 1
   }
   WORKTREE_PATH=$(echo "$WT_OUT" | grep '^WORKTREE_PATH=' | head -1 | cut -d= -f2-)
@@ -125,7 +125,7 @@ fi
 
 # Validate timeout is a positive integer
 if ! [[ "$WORKER_TIMEOUT_SECS" =~ ^[1-9][0-9]*$ ]]; then
-  echo "WARNING: invalid WORKER_TIMEOUT '$WORKER_TIMEOUT_SECS', using default 600" >&2
+  echo "WARNING: invalid WORKER_TIMEOUT '$WORKER_TIMEOUT_SECS' — expected a positive integer (seconds). Using default 600" >&2
   WORKER_TIMEOUT_SECS=600
 fi
 

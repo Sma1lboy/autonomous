@@ -120,7 +120,7 @@ atomic_write() {
   # Verify write succeeded (guards against disk full / truncation)
   if [ ! -s "$tmp" ]; then
     rm -f "$tmp" 2>/dev/null || true
-    die "atomic_write failed: tmp file empty or missing after write"
+    die "atomic_write failed: tmp file empty or missing after write. Disk may be full — check with 'df -h'"
   fi
   mv -f "$tmp" "$file"
 }
@@ -195,11 +195,11 @@ acquire_lock() {
       lock_pid=$(cat "$LOCK_DIR" 2>/dev/null || echo "")
     fi
     if [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null; then
-      die "Another conductor is running (PID $lock_pid). Lock: $LOCK_DIR"
+      die "Another conductor is running (PID $lock_pid). Lock: $LOCK_DIR. To force-release: bash scripts/conductor-state.sh unlock $PROJECT"
     fi
     # Stale lock, break it and re-acquire
     rm -rf "$LOCK_DIR" 2>/dev/null || true
-    mkdir "$LOCK_DIR" 2>/dev/null || die "Cannot acquire conductor lock"
+    mkdir "$LOCK_DIR" 2>/dev/null || die "Cannot acquire conductor lock. Check permissions on $STATE_DIR/conductor.lock"
   fi
   echo $$ > "$LOCK_DIR/pid"
 }
@@ -275,7 +275,7 @@ cmd_sprint_start() {
   [ -z "$direction" ] && die "Usage: conductor-state.sh sprint-start <project-dir> <direction>"
 
   local state
-  state=$(read_state_strict) || die "No conductor state found. Run 'init' first."
+  state=$(read_state_strict) || die "No conductor state found at $STATE_FILE. Run 'bash scripts/conductor-state.sh init $PROJECT <mission>' first."
 
   local updated
   updated=$(python3 -c "
@@ -651,5 +651,5 @@ case "$CMD" in
   rate-limit)    cmd_rate_limit "$@" ;;
   mark-parallel) cmd_mark_parallel "$@" ;;
   get-parallel)  cmd_get_parallel ;;
-  *)             die "Unknown command: $CMD. Use: init|read|sprint-start|sprint-end|phase|explore-pick|explore-score|progress|retry-mark|get-sprint|rate-limit|mark-parallel|get-parallel|lock|unlock" ;;
+  *)             die "Unknown command: $CMD. Run with --help for usage" ;;
 esac

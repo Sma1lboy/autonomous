@@ -59,7 +59,7 @@ if [ "${2:-}" = "--all" ]; then
   while true; do
     ((_all_polls++)) || true
     if [ "$_all_polls" -gt "$MAX_POLLS" ]; then
-      echo "=== MONITOR TIMEOUT (${MAX_POLLS} polls) ==="
+      echo "=== MONITOR TIMEOUT (${MAX_POLLS} polls, ~$((MAX_POLLS * 8 / 60))min). Increase via MONITOR_MAX_POLLS env var ==="
       echo "WORKER_DONE"
       exit 0
     fi
@@ -68,7 +68,7 @@ if [ "${2:-}" = "--all" ]; then
       STATUS=$(_read_comms_status "$f" "idle")
       if [ "$STATUS" = "CORRUPT" ]; then
         ((_all_corrupt_streak++)) || true
-        echo "WARNING: corrupt comms file: $f (streak: $_all_corrupt_streak)" >&2
+        echo "WARNING: corrupt comms file: $f (streak: $_all_corrupt_streak). Expected valid JSON with {\"status\":\"idle\"|\"waiting\"|\"done\"}. To reset: echo '{\"status\":\"idle\"}' > $f" >&2
         if [ "$_all_corrupt_streak" -ge 3 ]; then
           BASENAME=$(basename "$f" .json)
           WID="${BASENAME#comms-}"
@@ -119,7 +119,7 @@ _CORRUPT_STREAK=0
 while true; do
   ((_POLL_COUNT++)) || true
   if [ "$_POLL_COUNT" -gt "$MAX_POLLS" ]; then
-    echo "=== MONITOR TIMEOUT (${MAX_POLLS} polls) ==="
+    echo "=== MONITOR TIMEOUT (${MAX_POLLS} polls, ~$((MAX_POLLS * 8 / 60))min). Increase via MONITOR_MAX_POLLS env var ==="
     echo "WORKER_DONE"
     exit 0
   fi
@@ -129,7 +129,7 @@ while true; do
 
   if [ "$STATUS" = "CORRUPT" ]; then
     ((_CORRUPT_STREAK++)) || true
-    echo "WARNING: corrupt comms file: $COMMS_FILE (streak: $_CORRUPT_STREAK)" >&2
+    echo "WARNING: corrupt comms file: $COMMS_FILE (streak: $_CORRUPT_STREAK). Expected valid JSON with {\"status\":\"idle\"|\"waiting\"|\"done\"}. To reset: echo '{\"status\":\"idle\"}' > $COMMS_FILE" >&2
     if [ "$_CORRUPT_STREAK" -ge 3 ]; then
       echo "=== COMMS: CORRUPT JSON (3 consecutive) ==="
       echo "WORKER_ASKING"

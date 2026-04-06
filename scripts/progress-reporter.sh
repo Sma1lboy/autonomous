@@ -139,10 +139,16 @@ cmd_watch() {
       exit 0
     fi
 
-    # Print one-line status
+    # Print one-line status with color
+    CLR_BOLD="$_CLR_BOLD" CLR_BLUE="$_CLR_BLUE" CLR_GREEN="$_CLR_GREEN" CLR_YELLOW="$_CLR_YELLOW" CLR_RESET="$_CLR_RESET" \
     python3 -c "
-import json, sys
+import json, sys, os
 try:
+    B = os.environ.get('CLR_BOLD', '')
+    BL = os.environ.get('CLR_BLUE', '')
+    G = os.environ.get('CLR_GREEN', '')
+    Y = os.environ.get('CLR_YELLOW', '')
+    X = os.environ.get('CLR_RESET', '')
     with open(sys.argv[1]) as f:
         d = json.load(f)
     current = d.get('current_sprint', 0)
@@ -152,10 +158,13 @@ try:
     last = d.get('last_sprint_summary', '')
     if len(last) > 50:
         last = last[:47] + '...'
+    phase_color = G if phase == 'directed' else Y if phase == 'exploring' else ''
+    sprint_str = f'{B}Sprint {current}/{total}{X}'
+    phase_str = f'{phase_color}{phase}{X}'
     if last:
-        print(f'Sprint {current}/{total} | {phase} | {commits} commits | last: {last}')
+        print(f'{sprint_str} | {phase_str} | {commits} commits | last: {last}')
     else:
-        print(f'Sprint {current}/{total} | {phase} | {commits} commits')
+        print(f'{sprint_str} | {phase_str} | {commits} commits')
 except Exception as e:
     print(f'Error reading progress: {e}', file=sys.stderr)
 " "$PROGRESS_FILE"

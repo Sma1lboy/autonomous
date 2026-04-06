@@ -79,6 +79,7 @@ Conductor (SKILL.md, user's CC session)
 - `scripts/config-validator.sh` — Validate .autonomous/skill-config.json: validate, init, migrate, --fix
 - `scripts/learnings.sh` — Cross-session learning system: record sprint outcomes, query history, suggest directions, prune old entries (max 200 FIFO)
 - `scripts/autonomous-status.sh` — Quick status check for autonomous sessions (reads progress.json)
+- `scripts/doctor.sh` — Comprehensive diagnostic tool: deps, config, state, git, backlog, common issues (--json support)
 - `scripts/common.sh` — Shared utility functions sourced by other scripts
 - `scripts/comms-lib.sh` — Shared comms.json helpers sourced by monitor scripts
 - `scripts/progress-reporter.sh` — Progress reporting: reads conductor-state.json, writes/reads progress.json
