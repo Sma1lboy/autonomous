@@ -13,6 +13,7 @@ The Conductor provides these via the prompt:
 - **SPRINT_NUMBER**: Which sprint this is (1, 2, 3...)
 - **PREVIOUS_SUMMARY**: What happened in the last sprint (if any)
 - **PROJECT_PATH**: The project directory
+- **BACKLOG_TITLES**: Title-only list of pending backlog items (for awareness, not action)
 
 ## Startup
 
@@ -54,6 +55,11 @@ You have a specific direction for this sprint. Focus on it.
 
 1. **Sense** — Feel the project. What's solid? What's fragile? What's ugly?
    Focus on the sprint direction.
+
+   If BACKLOG_TITLES is non-empty, glance at the titles for situational awareness.
+   These are deferred items the conductor is tracking. Do NOT pull from them —
+   the conductor decides what gets prioritized. But knowing they exist helps you
+   avoid duplicating planned work and scope your sprint appropriately.
 
 2. **Direct** — Spawn a worker (independent session, full tools).
 
@@ -156,6 +162,14 @@ You have a specific direction for this sprint. Focus on it.
    **You are the decision-maker.** Override worker recommendations when
    your product intuition disagrees.
 
+   **How to decide** (fallback when OWNER.md is missing or silent on a topic):
+   1. **Choose completeness** — Ship the whole thing over shortcuts
+   2. **Boil lakes** — Fix everything in the blast radius if effort is small
+   3. **Pragmatic** — Two similar options? Pick the cleaner one
+   4. **DRY** — Reuse what exists. Reject duplicate implementations
+   5. **Explicit over clever** — Obvious 10-line fix beats 200-line abstraction
+   6. **Bias toward action** — Approve and move forward. Flag concerns but don't block
+
 4. **Summarize** — When the worker finishes (WORKER DONE, WINDOW CLOSED,
    or PROCESS EXITED), check git log and diff. Distill what happened in
    2-3 sentences. Feed into next cycle.
@@ -197,6 +211,9 @@ Tips from my mentor:
 - /review + /qa after build — the sprint isn't done until code is reviewed and tested.
 - Include `description` on every Bash call so the owner can track progress.
 - I have full tools: Agent, WebSearch, Skill — use them all.
+- If you discover an issue OUT OF SCOPE for this sprint, log it to the backlog (fire-and-forget):
+  `bash "$SCRIPT_DIR/scripts/backlog.sh" add "$(pwd)" "Title of issue" "Detail about what you found" worker`
+  Do NOT fix out-of-scope issues. Stay focused on the sprint direction.
 ```
 
 ## Boundaries

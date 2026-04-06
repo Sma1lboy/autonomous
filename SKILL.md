@@ -83,6 +83,11 @@ SESSION_BRANCH="auto/session-$(date +%s)"
 git checkout -b "$SESSION_BRANCH"
 mkdir -p .autonomous
 bash "$SCRIPT_DIR/scripts/conductor-state.sh" init "$(pwd)" "$_DIRECTION" "$_MAX_SPRINTS"
+
+# Initialize backlog (idempotent — preserves existing cross-session backlog)
+bash "$SCRIPT_DIR/scripts/backlog.sh" init "$(pwd)"
+# Prune stale items at session start
+bash "$SCRIPT_DIR/scripts/backlog.sh" prune "$(pwd)" 30 2>/dev/null || true
 ```
 
 ## How You Work — The Conductor Loop
@@ -93,18 +98,39 @@ For each sprint:
 
 ### 1. Plan — Decide the Sprint Direction
 
-Read the conductor state:
+Read the conductor state and backlog:
 ```bash
 bash "$SCRIPT_DIR/scripts/conductor-state.sh" read "$(pwd)"
+# Read backlog for planning context (full descriptions for conductor)
+BACKLOG_FULL=$(bash "$SCRIPT_DIR/scripts/backlog.sh" list "$(pwd)" open 2>/dev/null || echo "[]")
+BACKLOG_STATS=$(bash "$SCRIPT_DIR/scripts/backlog.sh" stats "$(pwd)" 2>/dev/null || echo "")
+```
+
+**Between sprints — Backlog triage:** If new worker-sourced items appeared
+(check `BACKLOG_STATS` for `untriaged` count), review them. Decide whether
+to promote (set `triaged true` + adjust priority) or drop (`status dropped`):
+```bash
+# Triage untriaged items (worker discoveries)
+bash "$SCRIPT_DIR/scripts/backlog.sh" update "$(pwd)" "<item-id>" triaged true
+bash "$SCRIPT_DIR/scripts/backlog.sh" update "$(pwd)" "<item-id>" priority 2
 ```
 
 **If phase is "directed":**
 - Break the user's mission into the next logical step
 - Consider what previous sprints accomplished (read previous sprint summaries)
 - Give a concrete, focused direction for this sprint
+- If the mission has more work than fits in one sprint, add deferred items to
+  the backlog for later:
+  ```bash
+  bash "$SCRIPT_DIR/scripts/backlog.sh" add "$(pwd)" "Deferred task title" "Full description" conductor 3
+  ```
 
 **If phase is "exploring":**
-- Pick the weakest dimension:
+- Scan the project to score each dimension (fast heuristics, not a full audit):
+  ```bash
+  bash "$SCRIPT_DIR/scripts/explore-scan.sh" "$(pwd)" "$SCRIPT_DIR/scripts/conductor-state.sh"
+  ```
+- Pick the weakest dimension (now informed by scan scores):
   ```bash
   bash "$SCRIPT_DIR/scripts/conductor-state.sh" explore-pick "$(pwd)"
   ```
@@ -117,6 +143,14 @@ bash "$SCRIPT_DIR/scripts/conductor-state.sh" read "$(pwd)"
   - `architecture` -> "Architecture review: check module boundaries, dependency directions, separation of concerns."
   - `performance` -> "Performance audit: find N+1 queries, unnecessary allocations, blocking I/O, missing caching."
   - `dx` -> "Developer experience: check CLI help text, error messages, setup instructions, onboarding."
+
+**If exploring and all dimensions scored >= 7 (project feels solid):**
+- Check the backlog for pending work before stopping:
+  ```bash
+  BACKLOG_ITEM=$(bash "$SCRIPT_DIR/scripts/backlog.sh" pick "$(pwd)" 2>/dev/null) || true
+  ```
+- If an item was returned, use its description as the sprint direction
+- If backlog is also empty, the project is genuinely solid — stop the session
 
 ### 2. Dispatch — Run the Sprint
 
@@ -142,6 +176,9 @@ PREV_SUMMARY=""
 [ -f ".autonomous/sprint-$((SPRINT_NUM-1))-summary.json" ] && \
   PREV_SUMMARY=$(cat ".autonomous/sprint-$((SPRINT_NUM-1))-summary.json")
 
+# Get title-only backlog for sprint master context (lightweight, no descriptions)
+BACKLOG_TITLES=$(bash "$SCRIPT_DIR/scripts/backlog.sh" list "$(pwd)" open titles-only 2>/dev/null || echo "")
+
 cat > .autonomous/sprint-prompt.md << SPRINT_EOF
 You are a sprint master. Read SPRINT.md at $SCRIPT_DIR/SPRINT.md and follow it.
 
@@ -149,6 +186,7 @@ PROJECT: $(pwd)
 SPRINT_NUMBER: $SPRINT_NUM
 SPRINT_DIRECTION: $SPRINT_DIRECTION
 PREVIOUS_SUMMARY: $PREV_SUMMARY
+BACKLOG_TITLES: $BACKLOG_TITLES
 
 Begin immediately. Dispatch your worker and drive the sprint to completion.
 When done, write .autonomous/sprint-summary.json with the results.
@@ -250,6 +288,12 @@ fi
 
 PHASE=$(bash "$SCRIPT_DIR/scripts/conductor-state.sh" sprint-end "$(pwd)" "$STATUS" "$SUMMARY" "$COMMITS" "$DIR_COMPLETE")
 echo "Phase after sprint $SPRINT_NUM: $PHASE"
+
+# If this sprint consumed a backlog item, mark it done
+if [ -n "${BACKLOG_ITEM_ID:-}" ] && [ "$STATUS" = "complete" ]; then
+  bash "$SCRIPT_DIR/scripts/backlog.sh" update "$(pwd)" "$BACKLOG_ITEM_ID" status done 2>/dev/null || true
+  bash "$SCRIPT_DIR/scripts/backlog.sh" update "$(pwd)" "$BACKLOG_ITEM_ID" sprint "$SPRINT_NUM" 2>/dev/null || true
+fi
 ```
 
 **Verify independently** (don't just trust the summary):

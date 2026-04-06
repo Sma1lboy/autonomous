@@ -6,24 +6,7 @@
 
 set -euo pipefail
 
-# ── Minimal test framework ──────────────────────────────────────────────────
-PASS=0; FAIL=0
-
-ok()   { echo "  ok  $*"; ((PASS++)) || true; }
-fail() { echo "  FAIL $*"; ((FAIL++)) || true; }
-
-assert_eq() {
-  [ "$1" = "$2" ] && ok "$3" || fail "$3 — got '$1', want '$2'"
-}
-assert_contains() {
-  echo "$1" | grep -q "$2" && ok "$3" || fail "$3 — '$2' not in output"
-}
-
-# ── Temp dir management ─────────────────────────────────────────────────────
-TMPDIRS=()
-new_tmp() { local d; d=$(mktemp -d); TMPDIRS+=("$d"); echo "$d"; }
-cleanup() { [ ${#TMPDIRS[@]} -gt 0 ] && rm -rf "${TMPDIRS[@]}" || true; }
-trap cleanup EXIT
+source "$(dirname "${BASH_SOURCE[0]}")/test_helpers.sh"
 
 # Helper: write comms.json to a dir
 write_comms() {
@@ -35,7 +18,7 @@ write_comms() {
 # Helper: read status using the exact snippet from master-watch.sh
 read_status() {
   # $1 = comms.json path
-  python3 -c "import json; print(json.load(open('$1')).get('status','?'))" 2>/dev/null || echo "?"
+  python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('status','?'))" "$1" 2>/dev/null || echo "?"
 }
 
 # ── Tests ───────────────────────────────────────────────────────────────────
@@ -278,10 +261,28 @@ PYEOF
 )
 assert_eq "$ANSWER" "B" "worker reads answer B"
 
-# ── Summary ─────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# --help flags for comms-related scripts
+# ═══════════════════════════════════════════════════════════════════════════
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo " Results: $PASS passed, $FAIL failed"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "14. master-watch.sh --help"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HELP=$(bash "$SCRIPT_DIR/../scripts/master-watch.sh" --help 2>&1)
+assert_contains "$HELP" "Usage:" "master-watch --help shows usage"
+assert_contains "$HELP" "comms.json" "master-watch --help mentions comms.json"
+assert_contains "$HELP" "worker-pid" "master-watch --help mentions worker-pid"
+
+bash "$SCRIPT_DIR/../scripts/master-watch.sh" --help >/dev/null 2>&1
+assert_eq "$?" "0" "master-watch --help exits 0"
+
 echo ""
-[ "$FAIL" -eq 0 ]
+echo "15. master-poll.sh --help"
+HELP=$(bash "$SCRIPT_DIR/../scripts/master-poll.sh" --help 2>&1)
+assert_contains "$HELP" "Usage:" "master-poll --help shows usage"
+assert_contains "$HELP" "comms.json" "master-poll --help mentions comms.json"
+assert_contains "$HELP" "project-dir" "master-poll --help mentions project-dir"
+
+bash "$SCRIPT_DIR/../scripts/master-poll.sh" --help >/dev/null 2>&1
+assert_eq "$?" "0" "master-poll --help exits 0"
+
+print_results

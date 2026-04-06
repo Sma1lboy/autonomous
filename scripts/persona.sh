@@ -2,10 +2,68 @@
 # persona.sh — Generate OWNER.md from git history and project docs if it doesn't exist
 set -euo pipefail
 
+usage() {
+  cat << 'EOF'
+Usage: persona.sh [project-dir]
+
+Generate OWNER.md from git history, CLAUDE.md, and README.md.
+If OWNER.md already exists, prints its path and exits.
+
+The generated persona captures the project owner's coding style,
+priorities, and conventions — used by autonomous-skill workers
+to make decisions aligned with the owner's preferences.
+
+Arguments:
+  project-dir   Path to the project (default: current directory)
+
+Falls back to a template if no project context is available or
+if claude CLI is not installed.
+EOF
+  exit 0
+}
+
+# Handle --help / -h before anything else
+case "${1:-}" in
+  -h|--help|help) usage ;;
+esac
+
+command -v python3 &>/dev/null || { echo "ERROR: python3 required but not found" >&2; exit 1; }
+
 PROJECT_DIR="${1:-.}"
 OWNER_FILE="$PROJECT_DIR/OWNER.md"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATE="$SCRIPT_DIR/../OWNER.md.template"
+
+# Write the fallback template to OWNER_FILE (used when no context or claude fails)
+write_fallback_template() {
+  if [ -f "$TEMPLATE" ]; then
+    cp "$TEMPLATE" "$OWNER_FILE"
+  else
+    cat > "$OWNER_FILE" << 'EOF'
+# Owner Persona
+
+## Priorities (what matters most)
+<!-- Fill in your priorities -->
+
+## Style (code conventions, commit style)
+<!-- Fill in your coding style -->
+
+## Avoid (things NOT to change)
+<!-- Fill in things to avoid -->
+
+## Current focus (what I'm working on right now)
+<!-- Fill in your current focus -->
+
+## Decision Framework
+1. **Choose completeness** — Ship the whole thing over shortcuts
+2. **Boil lakes** — Fix everything in the blast radius if effort is small
+3. **Pragmatic** — Two similar options? Pick the cleaner one
+4. **DRY** — Reuse what exists. Reject duplicate implementations
+5. **Explicit over clever** — Obvious 10-line fix beats 200-line abstraction
+6. **Bias toward action** — Approve and move forward. Flag concerns but don't block
+EOF
+  fi
+}
 
 # If OWNER.md exists, just print its path and exit
 if [ -f "$OWNER_FILE" ]; then
@@ -31,27 +89,9 @@ if [ -f "$PROJECT_DIR/README.md" ]; then
   README=$(head -80 "$PROJECT_DIR/README.md" 2>/dev/null || true)
 fi
 
-# If no context available, copy template as-is
+# If no context available, write template and exit
 if [ -z "$GIT_LOG" ] && [ -z "$CLAUDE_MD" ] && [ -z "$README" ]; then
-  if [ -f "$TEMPLATE" ]; then
-    cp "$TEMPLATE" "$OWNER_FILE"
-  else
-    cat > "$OWNER_FILE" << 'EOF'
-# Owner Persona
-
-## Priorities (what matters most)
-<!-- Fill in your priorities -->
-
-## Style (code conventions, commit style)
-<!-- Fill in your coding style -->
-
-## Avoid (things NOT to change)
-<!-- Fill in things to avoid -->
-
-## Current focus (what I'm working on right now)
-<!-- Fill in your current focus -->
-EOF
-  fi
+  write_fallback_template
   echo "$OWNER_FILE"
   exit 0
 fi
@@ -100,25 +140,7 @@ if [ -n "$RESULT" ]; then
   fi
 fi
 
-# Fallback: copy template
-if [ -f "$TEMPLATE" ]; then
-  cp "$TEMPLATE" "$OWNER_FILE"
-else
-  cat > "$OWNER_FILE" << 'EOF'
-# Owner Persona
-
-## Priorities (what matters most)
-<!-- Fill in your priorities -->
-
-## Style (code conventions, commit style)
-<!-- Fill in your coding style -->
-
-## Avoid (things NOT to change)
-<!-- Fill in things to avoid -->
-
-## Current focus (what I'm working on right now)
-<!-- Fill in your current focus -->
-EOF
-fi
+# Fallback: write template
+write_fallback_template
 echo "Created OWNER.md template. Edit it with your preferences: $OWNER_FILE" >&2
 echo "$OWNER_FILE"

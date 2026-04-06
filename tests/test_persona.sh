@@ -4,36 +4,13 @@
 
 set -euo pipefail
 
+source "$(dirname "${BASH_SOURCE[0]}")/test_helpers.sh"
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PERSONA_SH="$REPO_ROOT/scripts/persona.sh"
 
 # Intercept 'claude' with mock before real binary
 export PATH="$REPO_ROOT/tests:$PATH"
-
-# ── Minimal test framework ──────────────────────────────────────────────────
-PASS=0; FAIL=0
-
-ok()   { echo "  ok  $*"; ((PASS++)) || true; }
-fail() { echo "  FAIL $*"; ((FAIL++)) || true; }
-
-assert_eq() {
-  [ "$1" = "$2" ] && ok "$3" || fail "$3 — got '$1', want '$2'"
-}
-assert_file_exists() {
-  [ -f "$1" ] && ok "$2" || fail "$2 — file missing: $1"
-}
-assert_file_contains() {
-  grep -q "$2" "$1" 2>/dev/null && ok "$3" || fail "$3 — '$2' not in $1"
-}
-assert_file_not_contains() {
-  grep -q "$2" "$1" 2>/dev/null && fail "$3 — '$2' unexpectedly in $1" || ok "$3"
-}
-
-# ── Temp dir management ─────────────────────────────────────────────────────
-TMPDIRS=()
-new_tmp() { local d; d=$(mktemp -d); TMPDIRS+=("$d"); echo "$d"; }
-cleanup() { [ ${#TMPDIRS[@]} -gt 0 ] && rm -rf "${TMPDIRS[@]}" || true; }
-trap cleanup EXIT
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 echo ""
@@ -172,10 +149,20 @@ T=$(new_tmp)
 (cd "$T" && bash "$PERSONA_SH" >/dev/null 2>&1) || true
 assert_file_exists "$T/OWNER.md" "OWNER.md created in cwd"
 
-# ── Summary ─────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# 9. --help flag
+# ═══════════════════════════════════════════════════════════════════════════
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo " Results: $PASS passed, $FAIL failed"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-[ "$FAIL" -eq 0 ]
+echo "9. --help flag"
+HELP=$(bash "$PERSONA_SH" --help 2>&1)
+assert_contains "$HELP" "Usage:" "--help shows usage"
+assert_contains "$HELP" "OWNER.md" "--help mentions OWNER.md"
+assert_contains "$HELP" "project-dir" "--help mentions project-dir arg"
+
+bash "$PERSONA_SH" --help >/dev/null 2>&1
+assert_eq "$?" "0" "--help exits with code 0"
+
+HELP_SHORT=$(bash "$PERSONA_SH" -h 2>&1)
+assert_contains "$HELP_SHORT" "Usage:" "-h also shows usage"
+
+print_results
