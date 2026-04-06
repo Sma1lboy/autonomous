@@ -195,16 +195,20 @@ project_dir = sys.argv[1]
 state_file = sys.argv[2]
 sprint_count = int(sys.argv[3])
 
-# Load conductor state for directions and quality gate results
+# Load conductor state for directions, quality gate results, and costs
 directions = {}
 qg_results = {}
+sprint_costs = {}
+session_cost_usd = 0.0
 if os.path.isfile(state_file):
     try:
         with open(state_file) as f:
             state = json.load(f)
+        session_cost_usd = state.get('session_cost_usd', 0.0)
         for s in state.get('sprints', []):
             directions[s.get('number', 0)] = s.get('direction', 'unknown')
             qg_results[s.get('number', 0)] = s.get('quality_gate_passed', None)
+            sprint_costs[s.get('number', 0)] = s.get('cost_usd', 0)
     except Exception:
         pass
 
@@ -225,6 +229,7 @@ for n in range(1, sprint_count + 1):
     summary = data.get('summary', '')
     direction = directions.get(n, 'unknown')
     qg_passed = qg_results.get(n, None)
+    cost_usd = sprint_costs.get(n, 0)
     commit_count = len(commits)
     total_commits += commit_count
 
@@ -266,7 +271,8 @@ for n in range(1, sprint_count + 1):
         'files_list': sorted(files_set),
         'summary': summary,
         'rating': rating,
-        'quality_gate_passed': qg_passed
+        'quality_gate_passed': qg_passed,
+        'cost_usd': cost_usd
     })
 
 result = {
@@ -274,7 +280,8 @@ result = {
     'totals': {
         'sprints': len(sprints),
         'commits': total_commits,
-        'files_changed': len(all_files)
+        'files_changed': len(all_files),
+        'session_cost_usd': session_cost_usd
     }
 }
 print(json.dumps(result))
@@ -322,6 +329,8 @@ elif qg is False:
     print(f'  Quality:   FAIL')
 else:
     print(f'  Quality:   not run')
+cost = s.get('cost_usd', 0)
+print(f'  Cost:      \${cost:.4f}')
 print(f'  Rating:    {s[\"rating\"]}', end='')
 if s['rating'] == 'recommended':
     print(' (complete with commits)')
@@ -362,16 +371,20 @@ def qg_label(val):
     return '—'
 
 # Header
-print(f'{\"Sprint\":<7} | {\"Status\":<10} | {\"Commits\":<7} | {\"QG\":<4} | {\"Rating\":<11} | Summary')
-print(f'{\"-\"*7}+{\"-\"*12}+{\"-\"*9}+{\"-\"*6}+{\"-\"*13}+{\"-\"*30}')
+print(f'{\"Sprint\":<7} | {\"Status\":<10} | {\"Commits\":<7} | {\"QG\":<4} | {\"Cost\":<8} | {\"Rating\":<11} | Summary')
+print(f'{\"-\"*7}+{\"-\"*12}+{\"-\"*9}+{\"-\"*6}+{\"-\"*10}+{\"-\"*13}+{\"-\"*30}')
 
 for s in sprints:
     summary = s['summary']
     if len(summary) > 60:
         summary = summary[:57] + '...'
     qg = qg_label(s.get('quality_gate_passed'))
-    print(f'{s[\"number\"]:<7} | {s[\"status\"]:<10} | {s[\"commit_count\"]:<7} | {qg:<4} | {s[\"rating\"]:<11} | {summary}')
+    cost = s.get('cost_usd', 0)
+    cost_str = '\$' + f'{cost:.2f}' if cost else '—'
+    print(f'{s[\"number\"]:<7} | {s[\"status\"]:<10} | {s[\"commit_count\"]:<7} | {qg:<4} | {cost_str:<8} | {s[\"rating\"]:<11} | {summary}')
 
+session_cost = totals.get('session_cost_usd', 0)
+cost_line = ', \$' + f'{session_cost:.2f} cost' if session_cost else ''
 print()
-print(f'Total: {totals[\"sprints\"]} sprints, {totals[\"commits\"]} commits, {totals[\"files_changed\"]} files changed')
+print(f'Total: {totals[\"sprints\"]} sprints, {totals[\"commits\"]} commits, {totals[\"files_changed\"]} files changed{cost_line}')
 " "$DATA"
