@@ -31,8 +31,7 @@ import json, os
 content = os.environ.get(
     'MOCK_CLAUDE_OUTPUT',
     '# Owner Persona\n\n## Priorities\nShip fast\n\n'
-    '## Style\nClean bash\n\n## Avoid\nBreaking tests\n\n'
-    '## Current focus\nTest coverage'
+    '## Style\nClean bash\n\n## Avoid\nBreaking tests'
 )
 cost = float(os.environ.get('MOCK_CLAUDE_COST', '0.01'))
 print(json.dumps({'result': content, 'cost_usd': cost}))

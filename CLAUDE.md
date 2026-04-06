@@ -28,7 +28,7 @@ Conductor (SKILL.md, user's CC session)
 - `scripts/conductor-state.sh` — Conductor state management (atomic writes, PID lock, phase transitions)
 - `scripts/explore-scan.sh` — Project scanner: scores 8 exploration dimensions via bash heuristics
 - `scripts/backlog.sh` — Cross-session persistent backlog (progressive disclosure, mkdir locking, max 50 items)
-- `scripts/persona.sh` — OWNER.md auto-generation from git history + project docs
+- `scripts/persona.sh` — Two-tier OWNER.md: global owner (`~/.autonomous/owner.md` or `AUTONOMOUS_OWNER`) + per-project generation from git history + project docs
 - `scripts/loop.sh` — Standalone launcher (outside CC's skill system)
 - `scripts/master-poll.sh` — Manual master polling for comms.json
 - `scripts/master-watch.sh` — Dual-channel monitor (comms + session JSONL)
@@ -43,7 +43,7 @@ Conductor (SKILL.md, user's CC session)
 ## How it works
 
 1. User invokes `/autonomous-skill` in a git repo (e.g., `/autonomous-skill 5 build REST API`)
-2. persona.sh generates OWNER.md if missing (from git log + CLAUDE.md + README.md)
+2. persona.sh generates OWNER.md if missing (from global owner + git log + CLAUDE.md + README.md)
 3. Conductor (SKILL.md) talks to user to understand the mission (Discovery phase)
 4. Conductor creates `auto/session-TIMESTAMP` branch and initializes conductor-state.json
 5. **Conductor loop** (Plan -> Dispatch -> Monitor -> Evaluate -> Repeat):

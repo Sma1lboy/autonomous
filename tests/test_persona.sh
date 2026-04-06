@@ -50,10 +50,7 @@ Ship fast
 Clean bash
 
 ## Avoid
-Breaking tests
-
-## Current focus
-Test coverage"
+Breaking tests"
   bash "$PERSONA_SH" "$T" >/dev/null 2>&1
   unset MOCK_CLAUDE_OUTPUT
   assert_file_exists "$T/OWNER.md" "OWNER.md created"
@@ -78,10 +75,7 @@ Code quality
 Typed, tested
 
 ## Avoid
-Big rewrites
-
-## Current focus
-Refactor auth"
+Big rewrites"
   bash "$PERSONA_SH" "$T" >/dev/null 2>&1
   unset MOCK_CLAUDE_OUTPUT
   assert_file_exists "$T/OWNER.md" "OWNER.md created"
@@ -105,10 +99,7 @@ User experience
 Minimal
 
 ## Avoid
-Over-engineering
-
-## Current focus
-Onboarding flow"
+Over-engineering"
   bash "$PERSONA_SH" "$T" >/dev/null 2>&1
   unset MOCK_CLAUDE_OUTPUT
   assert_file_exists "$T/OWNER.md" "OWNER.md created"
@@ -164,5 +155,82 @@ assert_eq "$?" "0" "--help exits with code 0"
 
 HELP_SHORT=$(bash "$PERSONA_SH" -h 2>&1)
 assert_contains "$HELP_SHORT" "Usage:" "-h also shows usage"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 10. Global owner exists → used as base for generation
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "10. Global owner → used as base for generation"
+T=$(new_tmp)
+GLOBAL_DIR=$(new_tmp)
+mkdir -p "$GLOBAL_DIR"
+echo "# Global Owner
+## Priorities
+Global priorities here" > "$GLOBAL_DIR/owner.md"
+echo "# Project CLAUDE.md" > "$T/CLAUDE.md"
+if command -v jq >/dev/null 2>&1; then
+  export AUTONOMOUS_OWNER="$GLOBAL_DIR/owner.md"
+  export MOCK_CLAUDE_OUTPUT="# Owner Persona
+
+## Priorities
+Project-specific priorities (inherits global)
+
+## Style
+From global base"
+  bash "$PERSONA_SH" "$T" >/dev/null 2>&1
+  unset MOCK_CLAUDE_OUTPUT AUTONOMOUS_OWNER
+  assert_file_exists "$T/OWNER.md" "OWNER.md created with global base"
+  assert_file_contains "$T/OWNER.md" "Project-specific" "generated content uses global as base"
+else
+  echo "  skip (jq not installed)"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 11. AUTONOMOUS_OWNER env var overrides default global path
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "11. AUTONOMOUS_OWNER env var overrides default path"
+T=$(new_tmp)
+CUSTOM_DIR=$(new_tmp)
+mkdir -p "$CUSTOM_DIR"
+echo "# Custom Global Owner
+## Priorities
+Custom global priorities" > "$CUSTOM_DIR/my-owner.md"
+# No project context → should copy the custom global owner as-is
+export AUTONOMOUS_OWNER="$CUSTOM_DIR/my-owner.md"
+bash "$PERSONA_SH" "$T" >/dev/null 2>&1
+unset AUTONOMOUS_OWNER
+assert_file_exists "$T/OWNER.md" "OWNER.md created from custom global"
+assert_file_contains "$T/OWNER.md" "Custom global priorities" "custom global content copied"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 12. No project context + global owner → copies global as-is
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "12. No project context + global owner → copies global"
+T=$(new_tmp)
+GLOBAL_DIR=$(new_tmp)
+mkdir -p "$GLOBAL_DIR"
+echo "# Global Owner Persona
+## Priorities
+Ship quality code" > "$GLOBAL_DIR/owner.md"
+export AUTONOMOUS_OWNER="$GLOBAL_DIR/owner.md"
+bash "$PERSONA_SH" "$T" >/dev/null 2>&1
+unset AUTONOMOUS_OWNER
+assert_file_exists "$T/OWNER.md" "OWNER.md created"
+assert_file_contains "$T/OWNER.md" "Ship quality code" "global owner copied verbatim"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 13. No global owner → same behavior as before (template fallback)
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "13. No global owner → template fallback (unchanged behavior)"
+T=$(new_tmp)
+export AUTONOMOUS_OWNER="/nonexistent/path/owner.md"
+bash "$PERSONA_SH" "$T" >/dev/null 2>&1
+unset AUTONOMOUS_OWNER
+assert_file_exists "$T/OWNER.md" "OWNER.md created"
+assert_file_contains "$T/OWNER.md" "Priorities" "template content present"
+assert_file_not_contains "$T/OWNER.md" "Global" "no global content leaked"
 
 print_results
