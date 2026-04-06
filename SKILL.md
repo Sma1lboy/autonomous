@@ -207,19 +207,22 @@ BACKLOG_TITLES=$(bash "$SCRIPT_DIR/scripts/backlog.sh" list "$(pwd)" open titles
 # Inline SPRINT.md directly into prompt — agent gets full instructions at startup
 # (avoids "read this file" which agents forget or fail to find)
 if [ ! -f "$SCRIPT_DIR/SPRINT.md" ]; then
-  echo "ERROR: SPRINT.md not found at $SCRIPT_DIR/SPRINT.md"
-  exit 1
+  echo "ERROR: SPRINT.md not found at $SCRIPT_DIR/SPRINT.md — skipping sprint"
+  bash "$SCRIPT_DIR/scripts/conductor-state.sh" sprint-end "$(pwd)" "blocked" "SPRINT.md not found" "[]" "false"
+  # Continue to next sprint or stop gracefully instead of killing the session
+  continue 2>/dev/null || break 2>/dev/null || true
 fi
+# Use printf instead of echo — echo mangles content starting with -n/-e or containing \c
 {
-  echo "You are a sprint master. Follow the instructions below exactly."
-  echo ""
-  echo "SCRIPT_DIR: $SCRIPT_DIR"
-  echo "PROJECT: $(pwd)"
-  echo "SPRINT_NUMBER: $SPRINT_NUM"
-  echo "SPRINT_DIRECTION: $SPRINT_DIRECTION"
-  echo "PREVIOUS_SUMMARY: $PREV_SUMMARY"
-  echo "BACKLOG_TITLES: $BACKLOG_TITLES"
-  echo ""
+  printf '%s\n' "You are a sprint master. Follow the instructions below exactly."
+  printf '\n'
+  printf '%s\n' "SCRIPT_DIR: $SCRIPT_DIR"
+  printf '%s\n' "PROJECT: $(pwd)"
+  printf '%s\n' "SPRINT_NUMBER: $SPRINT_NUM"
+  printf '%s\n' "SPRINT_DIRECTION: $SPRINT_DIRECTION"
+  printf '%s\n' "PREVIOUS_SUMMARY: $PREV_SUMMARY"
+  printf '%s\n' "BACKLOG_TITLES: $BACKLOG_TITLES"
+  printf '\n'
   cat "$SCRIPT_DIR/SPRINT.md"
 } > .autonomous/sprint-prompt.md
 

@@ -84,13 +84,14 @@ You have a specific direction for this sprint. Focus on it.
    - Feels fragile? -> "Run /qa on this codebase."
    - Bug? -> "Run /investigate on: ..."
 
-   **IMPORTANT: Keep the worker prompt SHORT.** The worker has full tools —
+   **IMPORTANT: Keep the worker prompt CONCISE.** The worker has full tools —
    it can read code, browse the web, run skills. Give it:
    - A clear task (1-3 sentences)
    - Essential context it can't discover itself (e.g., reference URL, design system)
+   - The comms protocol and gstack sprint process (from Worker Prompt template below)
    - Nothing more. No file-by-file specs, no CSS values, no layout details.
    The worker will sense the project itself and make implementation decisions.
-   Over-specifying the worker prompt creates noise that hurts the model's attention.
+   Over-specifying creates noise that hurts the model's attention.
 
    Write the worker prompt, then dispatch in a tmux window so the user
    can watch the worker in real-time:
@@ -209,9 +210,10 @@ RUNEOF
 When you write `.autonomous/worker-prompt.md`, keep it concise.
 Write in first person — you ARE the owner talking to your worker.
 
-**The worker prompt should be SHORT — under 30 lines.** The worker has full
-tools and will sense the project itself. Don't duplicate what it can discover
-by reading the code. Only include what it CAN'T figure out on its own.
+**Keep the worker prompt concise.** The worker has full tools and will sense
+the project itself. Don't duplicate what it can discover by reading the code.
+Only include what it CAN'T figure out on its own (task + essential context +
+comms protocol from the template below).
 
 ```markdown
 I received a task from the project owner. Running as `claude -p` (non-interactive).
