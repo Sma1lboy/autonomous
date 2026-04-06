@@ -27,6 +27,7 @@ Conductor (SKILL.md, user's CC session)
 - `SPRINT.md` — Sprint master: per-sprint execution (Sense->Direct->Respond->Summarize)
 - `scripts/conductor-state.sh` — Conductor state management (atomic writes, PID lock, phase transitions)
 - `scripts/explore-scan.sh` — Project scanner: scores 8 exploration dimensions via bash heuristics
+- `scripts/backlog.sh` — Cross-session persistent backlog (progressive disclosure, mkdir locking, max 50 items)
 - `scripts/persona.sh` — OWNER.md auto-generation from git history + project docs
 - `scripts/loop.sh` — Standalone launcher (outside CC's skill system)
 - `scripts/master-poll.sh` — Manual master polling for comms.json
@@ -54,7 +55,9 @@ Conductor (SKILL.md, user's CC session)
      or max_directed_sprints reached, or 2 consecutive zero-commit sprints)
    - **Exploration phase**: picks weakest project dimension (test coverage, security,
      code quality, etc.) and generates exploration sprint directions
-6. Session ends when all sprints used up or project feels solid
+   - **Backlog fallback**: when exploration dimensions are all solid, conductor
+     picks from the persistent backlog (`.autonomous/backlog.json`) before stopping
+6. Session ends when all sprints used up, project feels solid, and backlog is empty
 
 ## Comms Protocol
 
@@ -74,6 +77,18 @@ The conductor tracks multi-sprint progress in `.autonomous/conductor-state.json`
 - Exploration dimensions with audit status and scores
 - Atomic writes (tmp+mv), PID lock for concurrency safety
 
+## Backlog
+
+Cross-session persistent work queue in `.autonomous/backlog.json`:
+- Items have `title` (one-line, max 120 chars) and `description` (full detail)
+- Progressive disclosure: sprint masters see titles only, conductor sees everything
+- Workers write to backlog (fire-and-forget) but never read from it
+- Worker items default to priority 4, `triaged: false`
+- Conductor triages new items between sprints, picks from backlog when idle
+- Max 50 open items; overflow force-prunes lowest priority
+- `mkdir`-based atomic locking for concurrent writes (workers + conductor)
+- Management: `scripts/backlog.sh` (init, add, list, read, pick, update, stats, prune)
+
 ## Safety
 
 - All changes on `auto/` branches (never main)
@@ -92,6 +107,7 @@ bash tests/test_comms.sh        # 34 tests: comms.json protocol, master-watch/ma
 bash tests/test_persona.sh      # 20 tests: OWNER.md generation, CLI help
 bash tests/test_explore_scan.sh # 45 tests: 8-dimension scoring heuristics, edge cases, CLI help
 bash tests/test_loop.sh         # 20 tests: standalone launcher args, env vars, persona, error handling, CLI help
+bash tests/test_backlog.sh      # 76 tests: CRUD, progressive disclosure, pick, prune, overflow, concurrency, validation
 shellcheck scripts/*.sh         # lint all shell scripts
 ```
 

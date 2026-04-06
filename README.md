@@ -70,6 +70,8 @@ Conductor (SKILL.md — runs in user's Claude Code session)
 
 Each layer runs in its own Claude session — fresh context per sprint, no bleed between layers.
 
+**Backlog** — A persistent work queue (`.autonomous/backlog.json`) that survives across sessions. Workers log out-of-scope discoveries, the conductor decomposes large missions into deferred items. When exploration runs dry, idle sprints pick from the backlog. Progressive disclosure: sprint masters only see one-line titles, the conductor sees full descriptions.
+
 ---
 
 ## How It Works
@@ -83,7 +85,8 @@ Each layer runs in its own Claude session — fresh context per sprint, no bleed
    - **Exploration phase**: scans the project across 8 dimensions, picks the weakest, generates improvement sprints
 5. **Sprint execution** — Each sprint master gets a fresh `claude -p` session, dispatches a worker, answers questions via `comms.json`, and writes `sprint-summary.json` when done.
 6. **Merge/discard** — Successful sprints merge back to the session branch. Failed sprints are discarded.
-7. **Session ends** when all sprints are used up or the project feels solid.
+7. **Backlog pickup** — When exploration dimensions are all solid, the conductor checks the backlog for deferred work items before stopping.
+8. **Session ends** when all sprints are used up, the project feels solid, and the backlog is empty.
 
 ### Exploration Dimensions
 
