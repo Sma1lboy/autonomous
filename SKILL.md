@@ -131,7 +131,16 @@ bash "$SCRIPT_DIR/scripts/backlog.sh" update "$(pwd)" "<item-id>" priority 2
 **If phase is "directed":**
 - Break the user's mission into the next logical step
 - Consider what previous sprints accomplished (read previous sprint summaries)
-- Give a concrete, focused direction for this sprint
+- Give a concrete, focused direction for this sprint — **ONE sentence, max TWO**.
+  The direction is a WHAT, not a HOW. Examples:
+  - GOOD: "Redesign all pages to match sma1lboy.me minimal style"
+  - GOOD: "Add user authentication with GitHub OAuth"
+  - BAD: "Redesign page.tsx with #fafafa background, 12px border-radius, Inter font,
+    pill buttons, bento grid layout, shadow-sm cards..." (this is implementation detail
+    — the worker should figure this out by sensing the project and the reference)
+  - BAD: A multi-paragraph spec listing every file, every CSS property, every layout decision
+  The sprint master and worker have full tools — they can read code, browse references,
+  and make design decisions. Your job is to point them in a direction, not prescribe the solution.
 - If the mission has more work than fits in one sprint, add deferred items to
   the backlog for later:
   ```bash

@@ -58,8 +58,18 @@ and make sure the output meets your standards.
 
 You have a specific direction for this sprint. Focus on it.
 
-1. **Sense** — Feel the project. What's solid? What's fragile? What's ugly?
-   Focus on the sprint direction.
+1. **Sense** — Feel the project BEFORE writing the worker prompt.
+   Read the actual code. Understand what exists. What's solid? What's fragile?
+
+   **You MUST sense first.** The conductor gives you a direction (1-2 sentences),
+   not a spec. Your job is to turn that direction into a concrete task by:
+   - Reading the relevant source files
+   - Understanding the current state of the code
+   - Identifying what specifically needs to change
+   - Deciding the right approach based on what you see
+
+   Do NOT just forward the conductor's direction to the worker verbatim.
+   The conductor says WHAT to do. You figure out HOW after sensing the project.
 
    If BACKLOG_TITLES is non-empty, glance at the titles for situational awareness.
    These are deferred items the conductor is tracking. Do NOT pull from them —
@@ -73,6 +83,14 @@ You have a specific direction for this sprint. Focus on it.
    - Need implementation? -> "Build this. Design doc at ..."
    - Feels fragile? -> "Run /qa on this codebase."
    - Bug? -> "Run /investigate on: ..."
+
+   **IMPORTANT: Keep the worker prompt SHORT.** The worker has full tools —
+   it can read code, browse the web, run skills. Give it:
+   - A clear task (1-3 sentences)
+   - Essential context it can't discover itself (e.g., reference URL, design system)
+   - Nothing more. No file-by-file specs, no CSS values, no layout details.
+   The worker will sense the project itself and make implementation decisions.
+   Over-specifying the worker prompt creates noise that hurts the model's attention.
 
    Write the worker prompt, then dispatch in a tmux window so the user
    can watch the worker in real-time:
@@ -188,15 +206,19 @@ RUNEOF
 
 ## Worker Prompt
 
-When you write `.autonomous/worker-prompt.md`, include this context.
+When you write `.autonomous/worker-prompt.md`, keep it concise.
 Write in first person — you ARE the owner talking to your worker.
+
+**The worker prompt should be SHORT — under 30 lines.** The worker has full
+tools and will sense the project itself. Don't duplicate what it can discover
+by reading the code. Only include what it CAN'T figure out on its own.
 
 ```markdown
 I received a task from the project owner. Running as `claude -p` (non-interactive).
 
 Project: {project path}
-Task: {description of what needs to be done}
-Context: {relevant background — who it's for, what exists already, key constraints}
+Task: {1-3 sentence description — WHAT to do, not HOW}
+Context: {only what the worker can't discover by reading the code — e.g., reference URLs, design system name, user constraints}
 
 gstack is a sprint process — each skill feeds into the next. I'll run the full sprint:
 
