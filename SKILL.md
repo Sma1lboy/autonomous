@@ -226,24 +226,8 @@ fi
   cat "$SCRIPT_DIR/SPRINT.md"
 } > .autonomous/sprint-prompt.md
 
-# Create wrapper script — tmux cannot use claude -p or stdin redirect reliably
-cat > .autonomous/run-sprint.sh << RUNEOF
-#!/bin/bash
-cd "$(pwd)"
-PROMPT=\$(cat .autonomous/sprint-prompt.md)
-exec claude --dangerously-skip-permissions "\$PROMPT"
-RUNEOF
-chmod +x .autonomous/run-sprint.sh
-
-# Dispatch in tmux (visible to user) or headless
-if command -v tmux &>/dev/null && tmux info &>/dev/null; then
-  tmux new-window -n "sprint-$SPRINT_NUM" "bash $(pwd)/.autonomous/run-sprint.sh"
-  echo "Sprint $SPRINT_NUM launched in tmux window 'sprint-$SPRINT_NUM'"
-else
-  bash .autonomous/run-sprint.sh > .autonomous/sprint-output.log 2>&1 &
-  SPRINT_PID=$!
-  echo "Sprint $SPRINT_NUM PID: $SPRINT_PID"
-fi
+# Dispatch sprint master (handles tmux vs headless automatically)
+bash "$SCRIPT_DIR/scripts/dispatch.sh" "$(pwd)" .autonomous/sprint-prompt.md "sprint-$SPRINT_NUM"
 ```
 
 ### 3. Monitor — Wait for Sprint Completion
@@ -253,7 +237,6 @@ Poll for sprint completion. The sprint master writes
 
 ```bash
 SUMMARY_FILE=".autonomous/sprint-$SPRINT_NUM-summary.json"
-_LAST_COMMIT=$(git log --oneline -1 2>/dev/null)
 while true; do
   # Check for sprint summary file
   if [ -f "$SUMMARY_FILE" ]; then
@@ -269,24 +252,11 @@ while true; do
     cat "$SUMMARY_FILE"
     break
   fi
-  # tmux window check
-  if command -v tmux &>/dev/null && tmux info &>/dev/null; then
+  # Check if sprint window/process is still alive
+  if command -v tmux &>/dev/null && tmux info &>/dev/null 2>&1; then
     if ! tmux list-windows 2>/dev/null | grep -q "sprint-$SPRINT_NUM"; then
       echo "=== SPRINT $SPRINT_NUM WINDOW CLOSED ==="
-      # Check if summary was written before exit
-      if [ -f ".autonomous/sprint-summary.json" ]; then
-        cp ".autonomous/sprint-summary.json" "$SUMMARY_FILE"
-        rm -f ".autonomous/sprint-summary.json"
-      fi
-      break
-    fi
-  elif [ -n "${SPRINT_PID:-}" ]; then
-    if ! kill -0 "$SPRINT_PID" 2>/dev/null; then
-      echo "=== SPRINT $SPRINT_NUM PROCESS EXITED ==="
-      if [ -f ".autonomous/sprint-summary.json" ]; then
-        cp ".autonomous/sprint-summary.json" "$SUMMARY_FILE"
-        rm -f ".autonomous/sprint-summary.json"
-      fi
+      [ -f ".autonomous/sprint-summary.json" ] && cp ".autonomous/sprint-summary.json" "$SUMMARY_FILE"
       break
     fi
   fi

@@ -93,101 +93,34 @@ You have a specific direction for this sprint. Focus on it.
    The worker will sense the project itself and make implementation decisions.
    Over-specifying creates noise that hurts the model's attention.
 
-   Write the worker prompt, then dispatch in a tmux window so the user
-   can watch the worker in real-time:
+   Write the worker prompt to `.autonomous/worker-prompt.md` (see Worker Prompt
+   section below), then dispatch and monitor:
 
    ```bash
    cat > .autonomous/worker-prompt.md << 'WORKER_EOF'
    [worker context + direction — see "Worker Prompt" section below]
    WORKER_EOF
 
-   # Create a wrapper script — tmux cannot use claude -p or stdin redirect reliably
-   cat > .autonomous/run-worker.sh << RUNEOF
-#!/bin/bash
-cd "$(pwd)"
-PROMPT=\$(cat .autonomous/worker-prompt.md)
-exec claude --dangerously-skip-permissions "\$PROMPT"
-RUNEOF
-   chmod +x .autonomous/run-worker.sh
+   # Dispatch worker (handles tmux vs headless automatically)
+   bash "$SCRIPT_DIR/scripts/dispatch.sh" "$(pwd)" .autonomous/worker-prompt.md worker
 
-   # Dispatch in tmux (TUI mode, visible to user) or fall back to headless background
-   if command -v tmux &>/dev/null && tmux info &>/dev/null; then
-     tmux new-window -n "worker" "bash $(pwd)/.autonomous/run-worker.sh"
-     echo "Worker launched in tmux window 'worker'"
-   else
-     bash .autonomous/run-worker.sh > .autonomous/worker-output.log 2>&1 &
-     echo "Worker PID: $!"
-   fi
+   # Monitor worker (blocks until done, asking, or exited)
+   bash "$SCRIPT_DIR/scripts/monitor-worker.sh" "$(pwd)" worker
    ```
 
    The worker is a **full Claude session** — it has Agent, WebSearch,
    all MCP tools. gstack skills work exactly as designed, including
    internal subagent spawns for adversarial reviews.
 
-3. **Respond** — Monitor the worker via **dual-channel polling** (comms.json
-   AND tmux worker activity). Run this as a background Bash command:
-
-   ```bash
-   _LAST_COMMIT=$(git log --oneline -1 2>/dev/null)
-   while true; do
-     STATUS=$(python3 -c "import json; d=json.load(open('.autonomous/comms.json')); print(d.get('status','idle'))" 2>/dev/null)
-     # Worker finished its sprint
-     if [ "$STATUS" = "done" ]; then
-       echo "=== WORKER DONE ==="
-       python3 -c "import json; d=json.load(open('.autonomous/comms.json')); print(json.dumps(d, indent=2))" 2>/dev/null
-       break
-     fi
-     # Worker asking a question
-     if [ "$STATUS" = "waiting" ]; then
-       echo "=== COMMS: WORKER ASKING ==="
-       python3 -c "import json; d=json.load(open('.autonomous/comms.json')); print(json.dumps(d, indent=2))" 2>/dev/null
-       break
-     fi
-     # Channel 2: tmux/process liveness check
-     if command -v tmux &>/dev/null && tmux info &>/dev/null; then
-       if ! tmux list-windows 2>/dev/null | grep -q worker; then
-         echo "=== WORKER WINDOW CLOSED ==="
-         break
-       fi
-       # Fallback: detect idle TUI with new commits (worker forgot to write done)
-       PANE=$(tmux capture-pane -t worker -p -S -5 2>/dev/null | tail -5)
-       LATEST_COMMIT=$(git log --oneline -1 2>/dev/null)
-       if [ "$LATEST_COMMIT" != "$_LAST_COMMIT" ] && echo "$PANE" | grep -qE '(^❯|Cogitated|idle)'; then
-         echo "=== WORKER DONE (detected via new commit + idle TUI) ==="
-         echo "Latest commit: $LATEST_COMMIT"
-         break
-       fi
-       _LAST_COMMIT="${_LAST_COMMIT:-$LATEST_COMMIT}"
-       echo "=== WORKER TUI ($(date +%H:%M:%S)) ==="
-       echo "$PANE"
-       echo "=== COMMS: $STATUS ==="
-     elif [ -n "$WORKER_PID" ]; then
-       if ! kill -0 $WORKER_PID 2>/dev/null; then
-         echo "=== WORKER PROCESS EXITED ==="
-         cat .autonomous/worker-output.log 2>/dev/null | tail -30
-         break
-       fi
-     fi
-     sleep 8
-   done
-   ```
-
-   When the poll breaks, **close the worker tmux window** if it's still open:
-   ```bash
-   if command -v tmux &>/dev/null && tmux info &>/dev/null; then
-     tmux kill-window -t worker 2>/dev/null || true
-   fi
-   ```
-
-   Then handle the result:
-   - **WORKER DONE**: sprint complete. Proceed to Summarize.
-   - **WORKER ASKING**: read the question, decide using your product
+3. **Respond** — When the monitor returns, handle the result:
+   - **WORKER_DONE**: sprint complete. Proceed to Summarize.
+   - **WORKER_ASKING**: read the question, decide using your product
      intuition, then answer:
      ```bash
      python3 -c "import json; json.dump({'status':'answered','answers':['A']}, open('.autonomous/comms.json','w'))"
      ```
-     Then restart the polling loop.
-   - **WORKER WINDOW CLOSED** / **WORKER PROCESS EXITED**: worker exited
+     Then re-run the monitor: `bash "$SCRIPT_DIR/scripts/monitor-worker.sh" "$(pwd)" worker`
+   - **WORKER_WINDOW_CLOSED** / **WORKER_PROCESS_EXITED**: worker exited
      unexpectedly. Check git log for commits. Proceed to Summarize.
 
    **You are the decision-maker.** Override worker recommendations when
