@@ -45,7 +45,7 @@ if [ -n "$ARGS" ]; then
 fi
 
 echo "_MAX_SPRINTS=$_MAX_SPRINTS"
-# Use printf to safely handle special characters in direction
-printf '_DIRECTION=%s\n' "$_DIRECTION"
+# Use printf %q to safely shell-escape special characters in direction
+printf '_DIRECTION=%q\n' "$_DIRECTION"
 echo "MAX_SPRINTS: $_MAX_SPRINTS" >&2
 [ -n "$_DIRECTION" ] && echo "DIRECTION: $_DIRECTION" >&2

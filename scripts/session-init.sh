@@ -31,11 +31,11 @@ SESSION_BRANCH="auto/session-$(date +%s)"
 git checkout -b "$SESSION_BRANCH"
 mkdir -p .autonomous
 
-bash "$SCRIPT_DIR/scripts/conductor-state.sh" init "$PROJECT_DIR" "$DIRECTION" "$MAX_SPRINTS"
+bash "$SCRIPT_DIR/scripts/conductor-state.sh" init "$PROJECT_DIR" "$DIRECTION" "$MAX_SPRINTS" >/dev/null
 
 # Initialize backlog (idempotent — preserves existing cross-session backlog)
-bash "$SCRIPT_DIR/scripts/backlog.sh" init "$PROJECT_DIR"
+bash "$SCRIPT_DIR/scripts/backlog.sh" init "$PROJECT_DIR" >/dev/null
 # Prune stale items at session start
-bash "$SCRIPT_DIR/scripts/backlog.sh" prune "$PROJECT_DIR" 30 2>/dev/null || true
+bash "$SCRIPT_DIR/scripts/backlog.sh" prune "$PROJECT_DIR" 30 >/dev/null 2>&1 || true
 
 echo "SESSION_BRANCH=$SESSION_BRANCH"
