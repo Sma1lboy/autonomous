@@ -12,10 +12,6 @@
 <!-- What should the autonomous agent never touch? -->
 <!-- Example: don't refactor the auth module, don't change the API schema -->
 
-## Current focus (what I'm working on right now)
-<!-- What are you currently working on? This helps the agent prioritize. -->
-<!-- Example: migrating from REST to GraphQL, fixing flaky tests -->
-
 ## Decision Framework
 <!-- These principles guide the autonomous agent when making judgment calls. -->
 <!-- Edit or reorder to match your preferences. -->

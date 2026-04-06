@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # persona.sh — Generate OWNER.md from git history and project docs if it doesn't exist
+# Supports two-tier owner: global (~/.autonomous/owner.md) + per-project OWNER.md
 set -euo pipefail
 
 usage() {
@@ -9,12 +10,24 @@ Usage: persona.sh [project-dir]
 Generate OWNER.md from git history, CLAUDE.md, and README.md.
 If OWNER.md already exists, prints its path and exits.
 
+Two-tier owner system:
+  1. Per-project OWNER.md in the project directory (highest priority)
+  2. Global owner at ~/.autonomous/owner.md (used as base for generation)
+
+If a global owner file exists, it is used as additional context when
+generating a per-project OWNER.md. If no project context is available
+(no git, no CLAUDE.md, no README), the global owner is copied as-is.
+
 The generated persona captures the project owner's coding style,
 priorities, and conventions — used by autonomous-skill workers
 to make decisions aligned with the owner's preferences.
 
 Arguments:
   project-dir   Path to the project (default: current directory)
+
+Environment:
+  AUTONOMOUS_OWNER   Path to global owner file
+                     (default: ~/.autonomous/owner.md)
 
 Falls back to a template if no project context is available or
 if claude CLI is not installed.
@@ -33,6 +46,7 @@ PROJECT_DIR="${1:-.}"
 OWNER_FILE="$PROJECT_DIR/OWNER.md"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATE="$SCRIPT_DIR/../OWNER.md.template"
+GLOBAL_OWNER="${AUTONOMOUS_OWNER:-$HOME/.autonomous/owner.md}"
 
 # Write the fallback template to OWNER_FILE (used when no context or claude fails)
 write_fallback_template() {
@@ -50,9 +64,6 @@ write_fallback_template() {
 
 ## Avoid (things NOT to change)
 <!-- Fill in things to avoid -->
-
-## Current focus (what I'm working on right now)
-<!-- Fill in your current focus -->
 
 ## Decision Framework
 1. **Choose completeness** — Ship the whole thing over shortcuts
@@ -89,8 +100,22 @@ if [ -f "$PROJECT_DIR/README.md" ]; then
   README=$(head -80 "$PROJECT_DIR/README.md" 2>/dev/null || true)
 fi
 
-# If no context available, write template and exit
+# Read global owner if it exists
+GLOBAL_OWNER_CONTENT=""
+if [ -f "$GLOBAL_OWNER" ]; then
+  GLOBAL_OWNER_CONTENT=$(cat "$GLOBAL_OWNER" 2>/dev/null || true)
+fi
+
+# If no project context available...
 if [ -z "$GIT_LOG" ] && [ -z "$CLAUDE_MD" ] && [ -z "$README" ]; then
+  # ...but global owner exists → copy it as-is
+  if [ -n "$GLOBAL_OWNER_CONTENT" ]; then
+    cp "$GLOBAL_OWNER" "$OWNER_FILE"
+    echo "Copied global owner to project OWNER.md: $OWNER_FILE" >&2
+    echo "$OWNER_FILE"
+    exit 0
+  fi
+  # ...no global owner either → write template
   write_fallback_template
   echo "$OWNER_FILE"
   exit 0
@@ -105,7 +130,14 @@ Format:
 ## Priorities (what matters most)
 ## Style (code conventions, commit style)
 ## Avoid (things NOT to change)
-## Current focus (what I'm working on right now)"
+## Decision Framework"
+
+if [ -n "$GLOBAL_OWNER_CONTENT" ]; then
+  CONTEXT="$CONTEXT
+
+Global owner persona (use as base, adapt to this project):
+$GLOBAL_OWNER_CONTENT"
+fi
 
 if [ -n "$GIT_LOG" ]; then
   CONTEXT="$CONTEXT
@@ -140,7 +172,12 @@ if [ -n "$RESULT" ]; then
   fi
 fi
 
-# Fallback: write template
-write_fallback_template
-echo "Created OWNER.md template. Edit it with your preferences: $OWNER_FILE" >&2
+# Fallback: if global owner exists, copy it; otherwise write template
+if [ -n "$GLOBAL_OWNER_CONTENT" ]; then
+  cp "$GLOBAL_OWNER" "$OWNER_FILE"
+  echo "Claude failed; copied global owner to project OWNER.md: $OWNER_FILE" >&2
+else
+  write_fallback_template
+  echo "Created OWNER.md template. Edit it with your preferences: $OWNER_FILE" >&2
+fi
 echo "$OWNER_FILE"
