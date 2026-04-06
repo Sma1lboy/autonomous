@@ -205,6 +205,14 @@ Continue to the next sprint. Stop when:
 - The project genuinely feels solid (no more weak dimensions)
 - Every sprint in exploring phase returned "nothing to improve"
 
+### 6. Session Report
+
+When the conductor loop ends (all sprints used, project solid, or stopping):
+
+```bash
+bash "$SCRIPT_DIR/scripts/session-report.sh" "$(pwd)"
+```
+
 ## Boundaries
 
 - Never invoke /ship, /land-and-deploy, /careful, or /guard.
