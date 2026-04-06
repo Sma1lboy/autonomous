@@ -46,22 +46,35 @@ echo "MAX_SPRINTS: $_MAX_SPRINTS"
 [ -n "$_DIRECTION" ] && echo "DIRECTION: $_DIRECTION"
 ```
 
+## CRITICAL: First Actions
+
+When this skill starts, you MUST take action immediately. Do NOT wait, do NOT
+ask unnecessary questions, do NOT explain what you're about to do. Act.
+
+1. Run the Startup bash block above (persona.sh, OWNER.md, git log)
+2. Run the Pre-flight bash block (parse args)
+3. If direction was given in args → say one sentence confirming it, then jump to Session
+4. If no direction → ask the user ONE question: "What should we work on?"
+5. Once you have a direction → jump to Session and start dispatching
+
+**Common mistake**: Reading all the instructions below and getting paralyzed.
+Don't. The instructions are reference material. Your job right now is:
+get a direction → create a branch → dispatch your first sprint. Go.
+
 ## Discovery — Before You Become The Owner
 
-Before the autonomous loop starts, have a conversation with the user. This is
-the only interactive phase. Use AskUserQuestion.
+Before the autonomous loop starts, have a brief conversation with the user.
+This is the only interactive phase. Use AskUserQuestion.
 
-If the user gave a direction in args, you already have context. Confirm it briefly
-and move on.
+If the user gave a direction in args, you already have context. Say one sentence
+confirming what you understood, then immediately proceed to Session. Do NOT
+ask follow-up questions unless the direction is genuinely ambiguous.
 
-If no direction was given, talk to them:
+If no direction was given, ask them ONE question:
 
-- "What are we building? What's the vision — even if it's rough?"
-- "Who is this for? What problem does it solve?"
-- "What matters most to you right now — shipping fast, code quality, exploring ideas?"
+- "What should we work on? (feature, bug, exploration — anything goes)"
 
-Once you feel you understand the owner's intent, stop asking. Say what you
-understood, then begin.
+Once you have a direction, stop talking. Start the Session.
 
 ## Who You Are
 
@@ -179,23 +192,29 @@ PREV_SUMMARY=""
 # Get title-only backlog for sprint master context (lightweight, no descriptions)
 BACKLOG_TITLES=$(bash "$SCRIPT_DIR/scripts/backlog.sh" list "$(pwd)" open titles-only 2>/dev/null || echo "")
 
-cat > .autonomous/sprint-prompt.md << SPRINT_EOF
-You are a sprint master. Read SPRINT.md at $SCRIPT_DIR/SPRINT.md and follow it.
-
-PROJECT: $(pwd)
-SPRINT_NUMBER: $SPRINT_NUM
-SPRINT_DIRECTION: $SPRINT_DIRECTION
-PREVIOUS_SUMMARY: $PREV_SUMMARY
-BACKLOG_TITLES: $BACKLOG_TITLES
-
-Begin immediately. Dispatch your worker and drive the sprint to completion.
-When done, write .autonomous/sprint-summary.json with the results.
-SPRINT_EOF
+# Inline SPRINT.md directly into prompt — agent gets full instructions at startup
+# (avoids "read this file" which agents forget or fail to find)
+if [ ! -f "$SCRIPT_DIR/SPRINT.md" ]; then
+  echo "ERROR: SPRINT.md not found at $SCRIPT_DIR/SPRINT.md"
+  exit 1
+fi
+{
+  echo "You are a sprint master. Follow the instructions below exactly."
+  echo ""
+  echo "SCRIPT_DIR: $SCRIPT_DIR"
+  echo "PROJECT: $(pwd)"
+  echo "SPRINT_NUMBER: $SPRINT_NUM"
+  echo "SPRINT_DIRECTION: $SPRINT_DIRECTION"
+  echo "PREVIOUS_SUMMARY: $PREV_SUMMARY"
+  echo "BACKLOG_TITLES: $BACKLOG_TITLES"
+  echo ""
+  cat "$SCRIPT_DIR/SPRINT.md"
+} > .autonomous/sprint-prompt.md
 
 # Create wrapper script — tmux cannot use claude -p or stdin redirect reliably
 cat > .autonomous/run-sprint.sh << RUNEOF
 #!/bin/bash
-cd $(pwd)
+cd "$(pwd)"
 PROMPT=\$(cat .autonomous/sprint-prompt.md)
 exec claude --dangerously-skip-permissions "\$PROMPT"
 RUNEOF
@@ -357,4 +376,6 @@ Continue to the next sprint. Stop when:
 
 ## Begin
 
-Start now. Feel the project. Plan your first sprint direction. Dispatch.
+**ACT NOW.** Your first action: run the Startup block, then Pre-flight, then
+Session setup. Then dispatch your first sprint. Do not explain, do not summarize
+the instructions above, do not ask "are you ready?" — just start executing bash.

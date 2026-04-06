@@ -3,8 +3,9 @@
 Per-sprint master for the autonomous-skill conductor. Runs one focused sprint:
 Sense the project, direct a worker, respond to questions, summarize results.
 
-This file is invoked by the Conductor (SKILL.md) via `claude -p` with a sprint
-direction. It does NOT interact with the user directly.
+This file is inlined directly into the sprint master's prompt by the Conductor
+(SKILL.md) — its full content is concatenated into the prompt, NOT referenced
+as a file to read. It does NOT interact with the user directly.
 
 ## Input
 
@@ -18,11 +19,15 @@ The Conductor provides these via the prompt:
 ## Startup
 
 ```bash
-SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")"
-if [ ! -d "$SCRIPT_DIR/scripts" ]; then
-  for dir in ~/.claude/skills/autonomous-skill /Volumes/ssd/i/auto-tool-workspace/autonomous-skill; do
-    if [ -d "$dir/scripts" ]; then SCRIPT_DIR="$dir"; break; fi
-  done
+# SCRIPT_DIR is provided in the prompt header by the conductor.
+# Fallback discovery in case it's missing or invalid:
+if [ -z "$SCRIPT_DIR" ] || [ ! -d "$SCRIPT_DIR/scripts" ]; then
+  SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")"
+  if [ ! -d "$SCRIPT_DIR/scripts" ]; then
+    for dir in ~/.claude/skills/autonomous-skill /Volumes/ssd/i/auto-tool-workspace/autonomous-skill; do
+      if [ -d "$dir/scripts" ]; then SCRIPT_DIR="$dir"; break; fi
+    done
+  fi
 fi
 [ -f OWNER.md ] && cat OWNER.md
 echo "PROJECT: $(basename $(pwd))"
@@ -80,7 +85,7 @@ You have a specific direction for this sprint. Focus on it.
    # Create a wrapper script — tmux cannot use claude -p or stdin redirect reliably
    cat > .autonomous/run-worker.sh << RUNEOF
 #!/bin/bash
-cd $(pwd)
+cd "$(pwd)"
 PROMPT=\$(cat .autonomous/worker-prompt.md)
 exec claude --dangerously-skip-permissions "\$PROMPT"
 RUNEOF
@@ -259,4 +264,6 @@ This file is read by the Conductor after the sprint ends.
 
 ## Begin
 
-You have your direction. Start now. Feel the project. Dispatch your first worker.
+**ACT NOW.** Run the Startup block, then Session Setup, then Sense the project,
+then dispatch your worker. Do not summarize these instructions. Do not explain
+what you're about to do. Execute the first bash block immediately.
