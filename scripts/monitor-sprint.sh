@@ -47,18 +47,18 @@ _comms_changed_since_start() {
 _generate_summary_from_comms() {
   local comms_summary="$1"
   python3 -c "
-import json, subprocess
-commits = subprocess.run(['git', 'log', '--oneline', '-5'], capture_output=True, text=True, cwd='$PROJECT_DIR').stdout.strip().split('\n')
+import json, subprocess, sys
+commits = subprocess.run(['git', 'log', '--oneline', '-5'], capture_output=True, text=True, cwd=sys.argv[1]).stdout.strip().split('\n')
 summary = {
     'status': 'complete',
     'commits': [c for c in commits[:5] if c],
-    'summary': '''$comms_summary''',
+    'summary': sys.argv[2],
     'iterations_used': 1,
     'direction_complete': True
 }
-with open('$SUMMARY_FILE', 'w') as f:
+with open(sys.argv[3], 'w') as f:
     json.dump(summary, f, indent=2)
-" 2>/dev/null
+" "$PROJECT_DIR" "$comms_summary" "$SUMMARY_FILE" 2>/dev/null
 }
 
 while true; do
@@ -81,9 +81,9 @@ while true; do
   # Check comms.json for worker/sprint-master "done" status (fallback if write-summary.sh was skipped)
   # Only accept if comms.json was modified AFTER monitor started (prevents stale reads)
   if [ -f "$COMMS_FILE" ] && _comms_changed_since_start; then
-    COMMS_STATUS=$(python3 -c "import json; print(json.load(open('$COMMS_FILE')).get('status',''))" 2>/dev/null || echo "")
+    COMMS_STATUS=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('status',''))" "$COMMS_FILE" 2>/dev/null || echo "")
     if [ "$COMMS_STATUS" = "done" ]; then
-      COMMS_SUMMARY=$(python3 -c "import json; print(json.load(open('$COMMS_FILE')).get('summary','Sprint completed (summary from comms)'))" 2>/dev/null || echo "Sprint completed")
+      COMMS_SUMMARY=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('summary','Sprint completed (summary from comms)'))" "$COMMS_FILE" 2>/dev/null || echo "Sprint completed")
       # Auto-generate sprint-summary.json from comms.json
       _generate_summary_from_comms "$COMMS_SUMMARY"
       echo "=== SPRINT $SPRINT_NUM COMPLETE (from comms.json fallback) ==="
@@ -109,9 +109,9 @@ while true; do
     if ! kill -0 "$HPID" 2>/dev/null; then
       # Process exited — check comms one more time (only if modified since start)
       if [ -f "$COMMS_FILE" ] && _comms_changed_since_start; then
-        COMMS_STATUS=$(python3 -c "import json; print(json.load(open('$COMMS_FILE')).get('status',''))" 2>/dev/null || echo "")
+        COMMS_STATUS=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('status',''))" "$COMMS_FILE" 2>/dev/null || echo "")
         if [ "$COMMS_STATUS" = "done" ]; then
-          COMMS_SUMMARY=$(python3 -c "import json; print(json.load(open('$COMMS_FILE')).get('summary','Sprint completed'))" 2>/dev/null || echo "Sprint completed")
+          COMMS_SUMMARY=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('summary','Sprint completed'))" "$COMMS_FILE" 2>/dev/null || echo "Sprint completed")
           _generate_summary_from_comms "$COMMS_SUMMARY"
           echo "=== SPRINT $SPRINT_NUM COMPLETE (headless exit + comms fallback) ==="
           cat "$SUMMARY_FILE"

@@ -38,7 +38,7 @@ if [ -n "$ARGS" ]; then
     _NUM=$(echo "$ARGS" | grep -oE '^[0-9]+' | head -1)
     if [ -n "$_NUM" ]; then
       _MAX_SPRINTS="$_NUM"
-      _DIRECTION=$(echo "$ARGS" | sed "s/^$_NUM[[:space:]]*//" )
+      _DIRECTION=$(echo "$ARGS" | sed "s/^${_NUM}[[:space:]]*//" )
     else
       _DIRECTION="$ARGS"
     fi
@@ -52,6 +52,6 @@ fi
 
 echo "_MAX_SPRINTS=$_MAX_SPRINTS"
 # Use printf to safely handle special characters in direction
-printf '_DIRECTION=%s\n' "$_DIRECTION"
+printf '_DIRECTION=%q\n' "$_DIRECTION"
 echo "MAX_SPRINTS: $_MAX_SPRINTS" >&2
 [ -n "$_DIRECTION" ] && echo "DIRECTION: $_DIRECTION" >&2
