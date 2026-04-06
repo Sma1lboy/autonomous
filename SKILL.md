@@ -75,6 +75,11 @@ Before dispatching your first sprint:
 eval "$(bash "$SCRIPT_DIR/scripts/session-init.sh" "$(pwd)" "$SCRIPT_DIR" "$_DIRECTION" "$_MAX_SPRINTS")"
 ```
 
+If resuming a halted session, use `--resume`:
+```bash
+eval "$(bash "$SCRIPT_DIR/scripts/session-resume.sh" "$(pwd)" --resume)"
+```
+
 ## How You Work — The Conductor Loop
 
 **Plan -> Dispatch -> Evaluate -> Repeat.**
@@ -118,6 +123,16 @@ bash "$SCRIPT_DIR/scripts/backlog.sh" update "$(pwd)" "<item-id>" priority 2
   bash "$SCRIPT_DIR/scripts/backlog.sh" add "$(pwd)" "Deferred task title" "Full description" conductor 3
   ```
 
+**Refine directions with learnings:**
+```bash
+bash "$SCRIPT_DIR/scripts/learnings.sh" suggest --project "$(basename "$(pwd)")" 2>/dev/null || true
+```
+
+**Load a saved template** (if `--template <name>` was passed in args):
+```bash
+TEMPLATE_DIRS=$(bash "$SCRIPT_DIR/scripts/templates.sh" load "<name>")
+```
+
 **If phase is "exploring":**
 - Scan and pick the weakest dimension:
   ```bash
@@ -158,16 +173,57 @@ bash "$SCRIPT_DIR/scripts/build-sprint-prompt.sh" "$(pwd)" "$SCRIPT_DIR" "$SPRIN
 bash "$SCRIPT_DIR/scripts/dispatch.sh" "$(pwd)" .autonomous/sprint-prompt.md "sprint-$SPRINT_NUM"
 ```
 
+**Worktree isolation** — Set `DISPATCH_ISOLATION=worktree` (env var or
+`.autonomous/skill-config.json`) to run each worker in its own git worktree
+instead of a shared checkout. Default is `branch` mode.
+
+**Worker timeout** — `WORKER_TIMEOUT` (env var or config) sets per-worker
+timeout in seconds (default: 600). Workers that exceed the limit are terminated
+and report a timeout via comms.
+
+**Rate limiting** — If dispatch fails with a rate limit error:
+```bash
+if bash "$SCRIPT_DIR/scripts/rate-limiter.sh" check "$STDERR_OUTPUT"; then
+  bash "$SCRIPT_DIR/scripts/rate-limiter.sh" wait "$(pwd)" "$ATTEMPT"
+  bash "$SCRIPT_DIR/scripts/rate-limiter.sh" record "$(pwd)" "sprint-$SPRINT_NUM"
+fi
+```
+
 ### 3. Monitor — Wait for Sprint Completion
 
 ```bash
 bash "$SCRIPT_DIR/scripts/monitor-sprint.sh" "$(pwd)" "$SPRINT_NUM"
 ```
 
+**Graceful shutdown** — On SIGINT, the monitor checks for a shutdown sentinel.
+The conductor propagates shutdown via:
+```bash
+bash "$SCRIPT_DIR/scripts/shutdown.sh" SIGINT "$(pwd)"
+```
+This sends C-c to all tmux worker windows, waits for graceful exit, and
+writes `.autonomous/shutdown-reason.json`.
+
 ### 4. Evaluate — Read Results and Decide Next
 
 ```bash
 eval "$(bash "$SCRIPT_DIR/scripts/evaluate-sprint.sh" "$(pwd)" "$SCRIPT_DIR" "$SPRINT_NUM")"
+```
+
+**Quality gate** — Verify the sprint with automated build/test:
+```bash
+QG_RESULT=$(bash "$SCRIPT_DIR/scripts/quality-gate.sh" "$(pwd)" 2>/dev/null || true)
+QG_PASSED=$(echo "$QG_RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin).get('passed', False))" 2>/dev/null || echo "unknown")
+```
+
+**Cost tracking** — Record sprint cost from claude's JSON output:
+```bash
+COST=$(bash "$SCRIPT_DIR/scripts/cost-tracker.sh" parse-output ".autonomous/sprint-${SPRINT_NUM}-output.json" 2>/dev/null || echo "0")
+bash "$SCRIPT_DIR/scripts/cost-tracker.sh" record "$(pwd)" "$SPRINT_NUM" "$COST"
+```
+
+**Collect metrics** for cross-session dashboard:
+```bash
+bash "$SCRIPT_DIR/scripts/metrics.sh" collect "$(pwd)" 2>/dev/null || true
 ```
 
 **Verify independently** (don't just trust the summary):
@@ -225,6 +281,22 @@ When the conductor loop ends (all sprints used, project solid, or stopping):
 
 ```bash
 bash "$SCRIPT_DIR/scripts/session-report.sh" "$(pwd)"
+```
+
+**Session diff** — Generate a consolidated diff summary for PR creation:
+```bash
+bash "$SCRIPT_DIR/scripts/session-diff.sh" "$(pwd)" --markdown
+```
+
+**Selective merge** — Cherry-pick specific sprints instead of merging all:
+```bash
+bash "$SCRIPT_DIR/scripts/selective-merge.sh" "$(pwd)" "$SESSION_BRANCH" --list
+bash "$SCRIPT_DIR/scripts/selective-merge.sh" "$(pwd)" "$SESSION_BRANCH" --merge 1,3,5
+```
+
+**Record learnings** for future sessions:
+```bash
+bash "$SCRIPT_DIR/scripts/learnings.sh" record "$(pwd)" 2>/dev/null || true
 ```
 
 ## Boundaries

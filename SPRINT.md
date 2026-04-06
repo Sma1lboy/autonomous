@@ -61,6 +61,12 @@ You have a specific direction for this sprint. Focus on it.
    ```
    If non-empty, include the hints block in the worker prompt (see template below).
 
+   **Discover available skills** — If the project has registered skills:
+   ```bash
+   SKILL_BLOCK=$(bash "$SCRIPT_DIR/scripts/skill-registry.sh" prompt-block "$(pwd)" 2>/dev/null || true)
+   ```
+   If non-empty, append to the worker prompt so the worker knows what skills are available.
+
    Do NOT just forward the conductor's direction to the worker verbatim.
    The conductor says WHAT to do. You figure out HOW after sensing the project.
 
@@ -134,6 +140,15 @@ You have a specific direction for this sprint. Focus on it.
    ```bash
    bash "$SCRIPT_DIR/scripts/write-summary.sh" "$(pwd)" "complete" "2-3 sentence summary here"
    ```
+
+   **Archive comms logs** — After write-summary.sh, comms files are archived
+   automatically to `.autonomous/comms-archive/sprint-{N}/` for post-session review.
+
+   **Backlog** — Workers can fire-and-forget backlog items during the sprint:
+   ```bash
+   bash "$SCRIPT_DIR/scripts/backlog.sh" add "$(pwd)" "Title" "Detail" worker
+   ```
+   These are triaged by the conductor between sprints, not acted on by the sprint master.
 
    Replace the summary string with your actual 2-3 sentence summary.
    This writes `sprint-summary.json` which the conductor polls for.
