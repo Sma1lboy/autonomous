@@ -192,14 +192,21 @@ Begin immediately. Dispatch your worker and drive the sprint to completion.
 When done, write .autonomous/sprint-summary.json with the results.
 SPRINT_EOF
 
+# Create wrapper script — tmux cannot use claude -p or stdin redirect reliably
+cat > .autonomous/run-sprint.sh << RUNEOF
+#!/bin/bash
+cd $(pwd)
+PROMPT=\$(cat .autonomous/sprint-prompt.md)
+exec claude --dangerously-skip-permissions "\$PROMPT"
+RUNEOF
+chmod +x .autonomous/run-sprint.sh
+
 # Dispatch in tmux (visible to user) or headless
 if command -v tmux &>/dev/null && tmux info &>/dev/null; then
-  tmux new-window -n "sprint-$SPRINT_NUM" \
-    "cd $(pwd) && claude --dangerously-skip-permissions < .autonomous/sprint-prompt.md"
+  tmux new-window -n "sprint-$SPRINT_NUM" "bash $(pwd)/.autonomous/run-sprint.sh"
   echo "Sprint $SPRINT_NUM launched in tmux window 'sprint-$SPRINT_NUM'"
 else
-  claude -p "$(cat .autonomous/sprint-prompt.md)" --dangerously-skip-permissions \
-    > .autonomous/sprint-output.log 2>&1 &
+  bash .autonomous/run-sprint.sh > .autonomous/sprint-output.log 2>&1 &
   SPRINT_PID=$!
   echo "Sprint $SPRINT_NUM PID: $SPRINT_PID"
 fi

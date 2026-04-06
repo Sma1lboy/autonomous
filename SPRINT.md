@@ -77,14 +77,21 @@ You have a specific direction for this sprint. Focus on it.
    [worker context + direction — see "Worker Prompt" section below]
    WORKER_EOF
 
+   # Create a wrapper script — tmux cannot use claude -p or stdin redirect reliably
+   cat > .autonomous/run-worker.sh << RUNEOF
+#!/bin/bash
+cd $(pwd)
+PROMPT=\$(cat .autonomous/worker-prompt.md)
+exec claude --dangerously-skip-permissions "\$PROMPT"
+RUNEOF
+   chmod +x .autonomous/run-worker.sh
+
    # Dispatch in tmux (TUI mode, visible to user) or fall back to headless background
    if command -v tmux &>/dev/null && tmux info &>/dev/null; then
-     tmux new-window -n "worker" \
-       "cd $(pwd) && claude --dangerously-skip-permissions < .autonomous/worker-prompt.md"
+     tmux new-window -n "worker" "bash $(pwd)/.autonomous/run-worker.sh"
      echo "Worker launched in tmux window 'worker'"
    else
-     claude -p "$(cat .autonomous/worker-prompt.md)" --dangerously-skip-permissions \
-       > .autonomous/worker-output.log 2>&1 &
+     bash .autonomous/run-worker.sh > .autonomous/worker-output.log 2>&1 &
      echo "Worker PID: $!"
    fi
    ```
