@@ -51,16 +51,19 @@ summary = {
     'direction_complete': sys.argv[4].lower() == 'true'
 }
 
-with open('.autonomous/sprint-summary.json', 'w') as f:
+tmp = '.autonomous/sprint-summary.json.tmp'
+with open(tmp, 'w') as f:
     json.dump(summary, f, indent=2)
+import os; os.replace(tmp, '.autonomous/sprint-summary.json')
 print(json.dumps(summary, indent=2))
 " "$STATUS" "$SUMMARY" "$ITERATIONS" "$DIR_COMPLETE"; then
   # python3 failed — write minimal fallback so conductor doesn't hang forever
   echo "WARNING: write-summary.sh python3 failed, writing fallback summary" >&2
   mkdir -p .autonomous
-  cat > .autonomous/sprint-summary.json << FALLBACK_EOF
+  cat > .autonomous/sprint-summary.json.tmp << FALLBACK_EOF
 {"status":"blocked","commits":[],"summary":"write-summary.sh failed: python3 error","iterations_used":0,"direction_complete":false}
 FALLBACK_EOF
+  mv -f .autonomous/sprint-summary.json.tmp .autonomous/sprint-summary.json
 fi
 
 # Archive comms.json for this sprint
