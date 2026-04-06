@@ -146,7 +146,7 @@ bash "$SCRIPT_DIR/scripts/backlog.sh" update "$(pwd)" "<item-id>" priority 2
 ```bash
 bash "$SCRIPT_DIR/scripts/conductor-state.sh" sprint-start "$(pwd)" "$SPRINT_DIRECTION"
 SPRINT_NUM=$(python3 -c "import json; d=json.load(open('.autonomous/conductor-state.json')); print(len(d['sprints']))")
-SPRINT_BRANCH="${SESSION_BRANCH}/sprint-${SPRINT_NUM}"
+SPRINT_BRANCH="${SESSION_BRANCH}-sprint-${SPRINT_NUM}"
 git checkout -b "$SPRINT_BRANCH"
 
 # Build sprint prompt (inlines SPRINT.md + params) and dispatch
