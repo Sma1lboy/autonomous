@@ -25,23 +25,23 @@ Conductor (SKILL.md, user's CC session)
 
 - `SKILL.md` — Conductor: multi-sprint orchestrator, phase management, exploration strategy
 - `SPRINT.md` — Sprint master: per-sprint execution (Sense->Direct->Respond->Summarize)
-- `scripts/startup.sh` — SCRIPT_DIR resolution + project context (shared by all layers)
-- `scripts/parse-args.sh` — Parse ARGS → _MAX_SPRINTS + _DIRECTION
-- `scripts/session-init.sh` — Create session branch, init conductor state + backlog
-- `scripts/build-sprint-prompt.sh` — Inline SPRINT.md + params → sprint-prompt.md
-- `scripts/dispatch.sh` — tmux/headless session dispatch
-- `scripts/monitor-sprint.sh` — Poll for sprint-summary.json
-- `scripts/monitor-worker.sh` — Poll comms.json + tmux/process liveness
-- `scripts/evaluate-sprint.sh` — Read summary JSON, update conductor state
-- `scripts/merge-sprint.sh` — Merge or discard sprint branch
-- `scripts/write-summary.sh` — Generate sprint-summary.json
-- `scripts/conductor-state.sh` — Conductor state management (atomic writes, PID lock, phase transitions)
-- `scripts/explore-scan.sh` — Project scanner: scores 8 exploration dimensions via bash heuristics
-- `scripts/backlog.sh` — Cross-session persistent backlog (progressive disclosure, mkdir locking, max 50 items)
-- `scripts/persona.sh` — OWNER.md auto-generation from git history + project docs
-- `scripts/loop.sh` — Standalone launcher (outside CC's skill system)
-- `scripts/master-poll.sh` — Manual master polling for comms.json
-- `scripts/master-watch.sh` — Dual-channel monitor (comms + session JSONL)
+- `scripts/startup.py` — SCRIPT_DIR resolution + project context (shared by all layers)
+- `scripts/parse-args.py` — Parse ARGS → _MAX_SPRINTS + _DIRECTION
+- `scripts/session-init.py` — Create session branch, init conductor state + backlog
+- `scripts/build-sprint-prompt.py` — Inline SPRINT.md + params → sprint-prompt.md
+- `scripts/dispatch.py` — tmux/headless session dispatch
+- `scripts/monitor-sprint.py` — Poll for sprint-summary.json
+- `scripts/monitor-worker.py` — Poll comms.json + tmux/process liveness
+- `scripts/evaluate-sprint.py` — Read summary JSON, update conductor state
+- `scripts/merge-sprint.py` — Merge or discard sprint branch
+- `scripts/write-summary.py` — Generate sprint-summary.json
+- `scripts/conductor-state.py` — Conductor state management (atomic writes, PID lock, phase transitions)
+- `scripts/explore-scan.py` — Project scanner: scores 8 exploration dimensions via heuristics
+- `scripts/backlog.py` — Cross-session persistent backlog (progressive disclosure, mkdir locking, max 50 items)
+- `scripts/persona.py` — OWNER.md auto-generation from git history + project docs
+- `scripts/loop.py` — Standalone launcher (outside CC's skill system)
+- `scripts/master-poll.py` — Manual master polling for comms.json
+- `scripts/master-watch.py` — Dual-channel monitor (comms + session JSONL)
 - `.claude/skills/test-worker/SKILL.md` — Test skill: spawns worker + auto-answering master
 - `.claude/skills/clean-sandbox/SKILL.md` — Reset test sandbox
 - `.claude/skills/clean-gstack/SKILL.md` — Delete gstack design doc archives
@@ -53,12 +53,12 @@ Conductor (SKILL.md, user's CC session)
 - `skill-config.json` — Default template selector (overridden per-project at `.autonomous/skill-config.json`)
 - `templates/gstack/template.md` — Worker slash-command set for the gstack toolchain
 - `templates/default/template.md` — Generic worker guidance with no toolchain assumptions
-- `scripts/build-sprint-prompt.sh` — Inlines SPRINT.md + template allow/block sections into the sprint master prompt
+- `scripts/build-sprint-prompt.py` — Inlines SPRINT.md + template allow/block sections into the sprint master prompt
 
 ## How it works
 
 1. User invokes `/autonomous-skill` in a git repo (e.g., `/autonomous-skill 5 build REST API`)
-2. persona.sh generates OWNER.md if missing (from git log + CLAUDE.md + README.md)
+2. persona.py generates OWNER.md if missing (from git log + CLAUDE.md + README.md)
 3. Conductor (SKILL.md) talks to user to understand the mission (Discovery phase)
 4. Conductor creates `auto/session-TIMESTAMP` branch and initializes conductor-state.json
 5. **Conductor loop** (Plan -> Dispatch -> Monitor -> Evaluate -> Repeat):
@@ -104,7 +104,7 @@ Cross-session persistent work queue in `.autonomous/backlog.json`:
 - Conductor triages new items between sprints, picks from backlog when idle
 - Max 50 open items; overflow force-prunes lowest priority
 - `mkdir`-based atomic locking for concurrent writes (workers + conductor)
-- Management: `scripts/backlog.sh` (init, add, list, read, pick, update, stats, prune)
+- Management: `scripts/backlog.py` (init, add, list, read, pick, update, stats, prune)
 
 ## Templates
 
@@ -120,8 +120,8 @@ Template selection hierarchy (first match wins):
 
 Config format: `{"template": "<name>"}`. Unknown names, malformed JSON, and
 path-traversal attempts (`../`, dot-prefixes) all fall through to the default
-template. `scripts/build-sprint-prompt.sh` resolves the template, extracts the
-Allow/Block sections with python3, and substitutes them into the
+template. `scripts/build-sprint-prompt.py` resolves the template, extracts the
+Allow/Block sections with Python, and substitutes them into the
 `<!-- AUTO:TEMPLATE_ALLOW -->` / `<!-- AUTO:TEMPLATE_BLOCK -->` markers in
 SPRINT.md as it writes `.autonomous/sprint-prompt.md`.
 
@@ -156,7 +156,7 @@ bash tests/test_explore_scan.sh # 45 tests: 8-dimension scoring heuristics, edge
 bash tests/test_loop.sh         # 20 tests: standalone launcher args, env vars, persona, error handling, CLI help
 bash tests/test_backlog.sh      # 76 tests: CRUD, progressive disclosure, pick, prune, overflow, concurrency, validation
 bash tests/test_build_sprint_prompt.sh  # 25 tests: template resolution, allow/block injection, fallback, path-traversal guard
-shellcheck scripts/*.sh         # lint all shell scripts
+python3 -m compileall scripts   # quick syntax check
 ```
 
 Test harness uses `tests/claude` (mock CC binary) controlled by env vars:

@@ -267,22 +267,22 @@ assert_eq "$ANSWER" "B" "worker reads answer B"
 echo ""
 echo "14. master-watch.sh --help"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HELP=$(bash "$SCRIPT_DIR/../scripts/master-watch.sh" --help 2>&1)
+HELP=$(python3 "$SCRIPT_DIR/../scripts/master-watch.py" --help 2>&1)
 assert_contains "$HELP" "Usage:" "master-watch --help shows usage"
 assert_contains "$HELP" "comms.json" "master-watch --help mentions comms.json"
 assert_contains "$HELP" "worker-pid" "master-watch --help mentions worker-pid"
 
-bash "$SCRIPT_DIR/../scripts/master-watch.sh" --help >/dev/null 2>&1
+python3 "$SCRIPT_DIR/../scripts/master-watch.py" --help >/dev/null 2>&1
 assert_eq "$?" "0" "master-watch --help exits 0"
 
 echo ""
 echo "15. master-poll.sh --help"
-HELP=$(bash "$SCRIPT_DIR/../scripts/master-poll.sh" --help 2>&1)
+HELP=$(python3 "$SCRIPT_DIR/../scripts/master-poll.py" --help 2>&1)
 assert_contains "$HELP" "Usage:" "master-poll --help shows usage"
 assert_contains "$HELP" "comms.json" "master-poll --help mentions comms.json"
 assert_contains "$HELP" "project-dir" "master-poll --help mentions project-dir"
 
-bash "$SCRIPT_DIR/../scripts/master-poll.sh" --help >/dev/null 2>&1
+python3 "$SCRIPT_DIR/../scripts/master-poll.py" --help >/dev/null 2>&1
 assert_eq "$?" "0" "master-poll --help exits 0"
 
 print_results

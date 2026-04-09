@@ -5,7 +5,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/test_helpers.sh"
 
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$TEST_DIR/.." && pwd)"
-SCRIPT="$REPO/scripts/build-sprint-prompt.sh"
+SCRIPT="$REPO/scripts/build-sprint-prompt.py"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -19,8 +19,8 @@ make_skill() {
   local d; d=$(new_tmp)
   cp "$REPO/SPRINT.md" "$d/"
   mkdir -p "$d/scripts" "$d/templates"
-  cp "$REPO/scripts/build-sprint-prompt.sh" "$d/scripts/"
-  cp "$REPO/scripts/backlog.sh" "$d/scripts/"
+  cp "$REPO/scripts/build-sprint-prompt.py" "$d/scripts/"
+  cp "$REPO/scripts/backlog.py" "$d/scripts/"
   # Copy templates except the omitted one
   for t in "$REPO"/templates/*/; do
     local name; name="$(basename "$t")"
@@ -39,7 +39,7 @@ make_project() {
 
 run_build() {
   local proj="$1" skill="$2"
-  bash "$skill/scripts/build-sprint-prompt.sh" "$proj" "$skill" 1 "test direction" "" >/dev/null 2>&1
+  python3 "$skill/scripts/build-sprint-prompt.py" "$proj" "$skill" 1 "test direction" "" >/dev/null 2>&1
 }
 
 # ── 1. Default template when no config exists ───────────────────────────
@@ -127,7 +127,7 @@ echo "7. header-and-template-both-present"
 SKILL=$(make_skill)
 PROJ=$(make_project)
 echo '{"template":"gstack"}' > "$SKILL/skill-config.json"
-bash "$SKILL/scripts/build-sprint-prompt.sh" "$PROJ" "$SKILL" 7 "build X" "last sprint did Y" >/dev/null 2>&1
+python3 "$SKILL/scripts/build-sprint-prompt.py" "$PROJ" "$SKILL" 7 "build X" "last sprint did Y" >/dev/null 2>&1
 assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "SPRINT_NUMBER: 7" "sprint num in header"
 assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "SPRINT_DIRECTION: build X" "direction in header"
 assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "PREVIOUS_SUMMARY: last sprint did Y" "prev summary in header"
@@ -162,7 +162,7 @@ assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "Sketch the smallest v
 
 echo ""
 echo "10. CLI help"
-OUT=$(bash "$SCRIPT" --help 2>&1)
+OUT=$(python3 "$SCRIPT" --help 2>&1)
 assert_contains "$OUT" "Usage:" "help shows usage"
 
 # ── Results ─────────────────────────────────────────────────────────────

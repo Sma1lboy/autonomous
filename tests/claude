@@ -25,7 +25,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ "$OUTPUT_FORMAT" = "json" ]; then
-  # persona.sh extracts via: jq -r '.result // empty'
+  # persona.py extracts via: jq -r '.result // empty'
   python3 - <<'PY'
 import json, os
 content = os.environ.get(
@@ -38,6 +38,6 @@ cost = float(os.environ.get('MOCK_CLAUDE_COST', '0.01'))
 print(json.dumps({'result': content, 'cost_usd': cost}))
 PY
 else
-  # stream-json: loop.sh only checks whether HEAD moved, not output content
+  # stream-json: loop.py only checks whether HEAD moved, not output content
   echo '{"type":"result","subtype":"success"}'
 fi

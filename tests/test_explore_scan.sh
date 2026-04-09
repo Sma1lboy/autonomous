@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for scripts/explore-scan.sh — exploration dimension scoring heuristics.
+# Tests for scripts/explore-scan.py — exploration dimension scoring heuristics.
 # Focuses on edge cases: error_handling, performance, node_modules exclusion,
 # clamp boundaries, missing dirs, and scoring arithmetic.
 
@@ -8,13 +8,13 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/test_helpers.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCANNER="$SCRIPT_DIR/../scripts/explore-scan.sh"
-CONDUCTOR="$SCRIPT_DIR/../scripts/conductor-state.sh"
+SCANNER="$SCRIPT_DIR/../scripts/explore-scan.py"
+CONDUCTOR="$SCRIPT_DIR/../scripts/conductor-state.py"
 
 # Helper: init a project with git and conductor state
 init_project() {
   local dir="$1"
-  bash "$CONDUCTOR" init "$dir" "test" 10 > /dev/null
+  python3 "$CONDUCTOR" init "$dir" "test" 10 > /dev/null
   (cd "$dir" && git init -q && git add -A && git commit -q -m "init")
 }
 
@@ -38,7 +38,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 # ═══════════════════════════════════════════════════════════════════════════
 echo ""
 echo "1. Missing project directory"
-ERR=$(bash "$SCANNER" "/nonexistent/path" "$CONDUCTOR" 2>&1 || true)
+ERR=$(python3 "$SCANNER" "/nonexistent/path" "$CONDUCTOR" 2>&1 || true)
 assert_contains "$ERR" "ERROR" "fails on missing project dir"
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -47,7 +47,7 @@ assert_contains "$ERR" "ERROR" "fails on missing project dir"
 echo ""
 echo "2. Missing conductor script"
 T=$(new_tmp)
-ERR=$(bash "$SCANNER" "$T" "/nonexistent/conductor.sh" 2>&1 || true)
+ERR=$(python3 "$SCANNER" "$T" "/nonexistent/conductor.sh" 2>&1 || true)
 assert_contains "$ERR" "ERROR" "fails on missing conductor script"
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -69,7 +69,7 @@ except ValueError:
 echo 'z = 3' > "$T/src/c.py"
 init_project "$T"
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 EH=$(get_score "$T" "error_handling")
 # 2 files with error handling / 3 non-test source files * 10 = 6.67 → 6
 assert_eq "$EH" "6" "2/3 files with error handling → score 6"
@@ -87,7 +87,7 @@ echo 'try: pass
 except: pass' > "$T/src/b.py"
 init_project "$T"
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 EH=$(get_score "$T" "error_handling")
 assert_eq "$EH" "10" "all files with error handling → score 10"
 
@@ -105,7 +105,7 @@ echo 'for item in items:
 echo 'fast = True' > "$T/src/fast.py"
 init_project "$T"
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 PERF=$(get_score "$T" "performance")
 # 2 files with perf issues * 2 = 4, 10 - 4 = 6
 assert_eq "$PERF" "6" "2 performance antipatterns → score 6"
@@ -120,7 +120,7 @@ mkdir -p "$T/src"
 echo 'x = 1' > "$T/src/clean.py"
 init_project "$T"
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 PERF=$(get_score "$T" "performance")
 assert_eq "$PERF" "10" "clean project → performance score 10"
 
@@ -140,7 +140,7 @@ echo 'test = 1' > "$T/node_modules/pkg/test_index.js"
 echo '# TODO: fix' > "$T/node_modules/pkg/broken.js"
 init_project "$T"
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 TC=$(get_score "$T" "test_coverage")
 # Only 1 test / 1 src (node_modules excluded), ratio = 10 → clamped to 10
 assert_eq "$TC" "10" "node_modules files excluded from test coverage"
@@ -160,7 +160,7 @@ init_project "$T"
 # .git contains files — they should never be counted
 # If git dir files leaked, scores would change unpredictably
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 VALID=$(python3 -c "
 import json
 d = json.load(open('$T/.autonomous/conductor-state.json'))
@@ -183,7 +183,7 @@ for i in $(seq 1 15); do
 done
 init_project "$T"
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 CQ=$(get_score "$T" "code_quality")
 assert_eq "$CQ" "0" "many TODOs clamp code_quality to 0"
 
@@ -198,7 +198,7 @@ echo 'x = 1' > "$T/app.py"
 for i in $(seq 1 30); do echo "t=$i" > "$T/tests/test_$i.py"; done
 init_project "$T"
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 TC=$(get_score "$T" "test_coverage")
 assert_eq "$TC" "10" "30 tests / 1 src → clamped to 10"
 
@@ -212,7 +212,7 @@ T=$(new_tmp)
 echo '# just a readme' > "$T/README.md"
 init_project "$T"
 
-OUTPUT=$(bash "$SCANNER" "$T" "$CONDUCTOR" 2>&1)
+OUTPUT=$(python3 "$SCANNER" "$T" "$CONDUCTOR" 2>&1)
 assert_contains "$OUTPUT" "Exploration scan complete" "completes with zero source files"
 
 VALID=$(python3 -c "
@@ -243,7 +243,7 @@ echo "testing"
 SH
 init_project "$T"
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 TC=$(get_score "$T" "test_coverage")
 assert_ge "$TC" "1" "shell-only project has nonzero test_coverage"
 
@@ -261,7 +261,7 @@ echo 'x = 1' > "$T/src/app.py"
 echo '# Project' > "$T/README.md"
 init_project "$T"
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 DOC=$(get_score "$T" "documentation")
 # README (4) + fresh README (3) = 7, no docs/ dir
 assert_eq "$DOC" "7" "README without docs/ → score 7"
@@ -276,7 +276,7 @@ mkdir -p "$T/src"
 echo 'x = 1' > "$T/src/app.py"
 init_project "$T"
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 DOC=$(get_score "$T" "documentation")
 assert_eq "$DOC" "0" "no README → documentation score 0"
 
@@ -296,7 +296,7 @@ done
 echo 'small = 1' > "$T/src/small.py"
 init_project "$T"
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 ARCH=$(get_score "$T" "architecture")
 # 3 big files * 2 = 6, 10 - 6 = 4
 assert_eq "$ARCH" "4" "3 big files → architecture score 4"
@@ -312,7 +312,7 @@ echo 'x = 1' > "$T/src/a.py"
 echo 'y = 2' > "$T/src/b.py"
 init_project "$T"
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 ARCH=$(get_score "$T" "architecture")
 assert_eq "$ARCH" "10" "no big files → architecture score 10"
 
@@ -326,7 +326,7 @@ mkdir -p "$T/src"
 echo 'x = 1' > "$T/src/app.py"
 init_project "$T"
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 DX=$(get_score "$T" "dx")
 # 0 help / 0 cli → _c defaults to 1, 0 * 10 / 1 = 0
 assert_eq "$DX" "0" "no shell scripts → dx score 0"
@@ -344,7 +344,7 @@ echo "Usage: '"$name"'.sh [options]"' > "$T/scripts/${name}.sh"
 done
 init_project "$T"
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 DX=$(get_score "$T" "dx")
 assert_eq "$DX" "10" "all scripts with help → dx score 10"
 
@@ -360,7 +360,7 @@ for i in $(seq 1 6); do
 done
 init_project "$T"
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 SEC=$(get_score "$T" "security")
 # 6 files with password * 2 = 12, 10 - 12 = -2 → clamp to 0
 assert_eq "$SEC" "0" "many security issues → clamped to 0"
@@ -376,7 +376,7 @@ echo 'x = 1' > "$T/src/app.js"
 echo 'describe("app", () => {})' > "$T/spec/app.spec.js"
 init_project "$T"
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 TC=$(get_score "$T" "test_coverage")
 # 1 spec / 1 src = 10
 assert_eq "$TC" "10" "spec files counted as test files"
@@ -392,7 +392,7 @@ echo 'package main' > "$T/app.go"
 echo 'package main' > "$T/app_test.go"
 init_project "$T"
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 TC=$(get_score "$T" "test_coverage")
 assert_ge "$TC" "1" "_test.go files counted as test files"
 
@@ -408,7 +408,7 @@ echo '# TODO: fix' > "$T/vendor/lib/dep.py"
 echo '# TODO: fix' > "$T/dist/bundle.js"
 init_project "$T"
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 CQ=$(get_score "$T" "code_quality")
 assert_eq "$CQ" "10" "vendor/ and dist/ TODOs excluded from quality score"
 
@@ -427,7 +427,7 @@ for i in range(400):
 " > "$T/build/output.js"
 init_project "$T"
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 ARCH=$(get_score "$T" "architecture")
 assert_eq "$ARCH" "10" "build/ big files excluded from architecture"
 
@@ -444,7 +444,7 @@ echo '# TODO: fix' > "$T/src/util.py"
 echo '# My Project' > "$T/README.md"
 init_project "$T"
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 SCORES1=$(python3 -c "
 import json
 d = json.load(open('$T/.autonomous/conductor-state.json'))
@@ -452,7 +452,7 @@ print(json.dumps({k: v['score'] for k, v in d['exploration'].items()}, sort_keys
 ")
 
 # Run again
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 SCORES2=$(python3 -c "
 import json
 d = json.load(open('$T/.autonomous/conductor-state.json'))
@@ -478,7 +478,7 @@ echo 'test = 1' > "$T/tests/test_app.py"
 echo 'test("x", () => {})' > "$T/tests/test_app.js"
 init_project "$T"
 
-OUTPUT=$(bash "$SCANNER" "$T" "$CONDUCTOR" 2>&1)
+OUTPUT=$(python3 "$SCANNER" "$T" "$CONDUCTOR" 2>&1)
 assert_contains "$OUTPUT" "Exploration scan complete" "mixed language scan completes"
 
 VALID=$(python3 -c "
@@ -503,7 +503,7 @@ echo '# TODO: fix everything' > "$T/.autonomous/notes.py"
 echo 'password = "secret"' > "$T/.autonomous/config.py"
 init_project "$T"
 
-bash "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
+python3 "$SCANNER" "$T" "$CONDUCTOR" > /dev/null 2>&1
 CQ=$(get_score "$T" "code_quality")
 SEC=$(get_score "$T" "security")
 assert_eq "$CQ" "10" ".autonomous TODOs excluded from quality"
@@ -556,16 +556,16 @@ assert_eq "$(test_clamp "-3")" "0" "clamp clamps unary negative to 0"
 # ═══════════════════════════════════════════════════════════════════════════
 echo ""
 echo "13. --help flag"
-HELP=$(bash "$SCANNER" --help 2>&1)
+HELP=$(python3 "$SCANNER" --help 2>&1)
 assert_contains "$HELP" "Usage:" "--help shows usage"
 assert_contains "$HELP" "test_coverage" "--help lists dimensions"
 assert_contains "$HELP" "dx" "--help lists dx dimension"
 assert_contains "$HELP" "conductor-state-script" "--help mentions conductor arg"
 
-bash "$SCANNER" --help >/dev/null 2>&1
+python3 "$SCANNER" --help >/dev/null 2>&1
 assert_eq "$?" "0" "--help exits with code 0"
 
-HELP_SHORT=$(bash "$SCANNER" -h 2>&1)
+HELP_SHORT=$(python3 "$SCANNER" -h 2>&1)
 assert_contains "$HELP_SHORT" "Usage:" "-h also shows usage"
 
 print_results

@@ -20,7 +20,7 @@ The Conductor provides these via the prompt header:
 ## Startup
 
 ```bash
-bash "$SCRIPT_DIR/scripts/startup.sh" "$(pwd)"
+python3 "$SCRIPT_DIR/scripts/startup.py" "$(pwd)"
 ```
 
 ## Session Setup
@@ -69,8 +69,8 @@ You have a specific direction for this sprint. Focus on it.
    (see Worker Prompt section below), then dispatch and monitor:
 
    ```bash
-   bash "$SCRIPT_DIR/scripts/dispatch.sh" "$(pwd)" .autonomous/worker-prompt.md worker
-   bash "$SCRIPT_DIR/scripts/monitor-worker.sh" "$(pwd)" worker
+   python3 "$SCRIPT_DIR/scripts/dispatch.py" "$(pwd)" .autonomous/worker-prompt.md worker
+   python3 "$SCRIPT_DIR/scripts/monitor-worker.py" "$(pwd)" worker
    ```
 
    Give the worker one thing to do, not a pipeline:
@@ -90,7 +90,7 @@ You have a specific direction for this sprint. Focus on it.
      ```bash
      python3 -c "import json; json.dump({'status':'answered','answers':['A']}, open('.autonomous/comms.json','w'))"
      ```
-     Then re-run the monitor: `bash "$SCRIPT_DIR/scripts/monitor-worker.sh" "$(pwd)" worker`
+     Then re-run the monitor: `python3 "$SCRIPT_DIR/scripts/monitor-worker.py" "$(pwd)" worker`
    - **WORKER_WINDOW_CLOSED** / **WORKER_PROCESS_EXITED**: worker exited
      unexpectedly. Check git log for commits. Proceed to Summarize.
 
@@ -109,7 +109,7 @@ You have a specific direction for this sprint. Focus on it.
    Write the sprint summary:
 
    ```bash
-   bash "$SCRIPT_DIR/scripts/write-summary.sh" "$(pwd)" "complete" "2-3 sentence summary here"
+   python3 "$SCRIPT_DIR/scripts/write-summary.py" "$(pwd)" "complete" "2-3 sentence summary here"
    ```
 
 ## Worker Prompt
@@ -133,7 +133,7 @@ To wait: `python3 -c "import json,time;\nwhile True:\n d=json.load(open('.autono
 When done: `python3 -c "import json; json.dump({'status':'done','summary':'...'}, open('.autonomous/comms.json','w'))"`
 
 If you discover an out-of-scope issue, log it:
-  `bash "$SCRIPT_DIR/scripts/backlog.sh" add "$(pwd)" "Title" "Detail" worker`
+  `python3 "$SCRIPT_DIR/scripts/backlog.py" add "$(pwd)" "Title" "Detail" worker`
 ```
 
 ## Boundaries
