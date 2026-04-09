@@ -15,14 +15,14 @@ if [ ! -d "$SCRIPT_DIR/scripts" ]; then
     if [ -d "$dir/scripts" ]; then SCRIPT_DIR="$dir"; break; fi
   done
 fi
-bash "$SCRIPT_DIR/scripts/persona.sh" "$(pwd)" >/dev/null 2>&1
-bash "$SCRIPT_DIR/scripts/startup.sh" "$(pwd)"
+python3 "$SCRIPT_DIR/scripts/persona.py" "$(pwd)" >/dev/null 2>&1
+python3 "$SCRIPT_DIR/scripts/startup.py" "$(pwd)"
 ```
 
 ## Pre-flight
 
 ```bash
-eval "$(bash "$SCRIPT_DIR/scripts/parse-args.sh" "$ARGS")"
+eval "$(python3 "$SCRIPT_DIR/scripts/parse-args.py" "$ARGS")"
 ```
 
 ## CRITICAL: First Actions
@@ -71,7 +71,7 @@ Your job is to:
 Before dispatching your first sprint:
 
 ```bash
-eval "$(bash "$SCRIPT_DIR/scripts/session-init.sh" "$(pwd)" "$SCRIPT_DIR" "$_DIRECTION" "$_MAX_SPRINTS")"
+eval "$(python3 "$SCRIPT_DIR/scripts/session-init.py" "$(pwd)" "$SCRIPT_DIR" "$_DIRECTION" "$_MAX_SPRINTS")"
 ```
 
 ## How You Work — The Conductor Loop
@@ -84,16 +84,16 @@ For each sprint:
 
 Read the conductor state and backlog:
 ```bash
-bash "$SCRIPT_DIR/scripts/conductor-state.sh" read "$(pwd)"
-BACKLOG_FULL=$(bash "$SCRIPT_DIR/scripts/backlog.sh" list "$(pwd)" open 2>/dev/null || echo "[]")
-BACKLOG_STATS=$(bash "$SCRIPT_DIR/scripts/backlog.sh" stats "$(pwd)" 2>/dev/null || echo "")
+python3 "$SCRIPT_DIR/scripts/conductor-state.py" read "$(pwd)"
+BACKLOG_FULL=$(python3 "$SCRIPT_DIR/scripts/backlog.py" list "$(pwd)" open 2>/dev/null || echo "[]")
+BACKLOG_STATS=$(python3 "$SCRIPT_DIR/scripts/backlog.py" stats "$(pwd)" 2>/dev/null || echo "")
 ```
 
 **Between sprints — Backlog triage:** If new worker-sourced items appeared
 (check `BACKLOG_STATS` for `untriaged` count), review them:
 ```bash
-bash "$SCRIPT_DIR/scripts/backlog.sh" update "$(pwd)" "<item-id>" triaged true
-bash "$SCRIPT_DIR/scripts/backlog.sh" update "$(pwd)" "<item-id>" priority 2
+python3 "$SCRIPT_DIR/scripts/backlog.py" update "$(pwd)" "<item-id>" triaged true
+python3 "$SCRIPT_DIR/scripts/backlog.py" update "$(pwd)" "<item-id>" priority 2
 ```
 
 **If phase is "directed":**
@@ -114,14 +114,14 @@ bash "$SCRIPT_DIR/scripts/backlog.sh" update "$(pwd)" "<item-id>" priority 2
   directions YOU generate when breaking a mission into sprints — not to user-authored content.
 - If the mission has more work than fits in one sprint, add deferred items to the backlog:
   ```bash
-  bash "$SCRIPT_DIR/scripts/backlog.sh" add "$(pwd)" "Deferred task title" "Full description" conductor 3
+  python3 "$SCRIPT_DIR/scripts/backlog.py" add "$(pwd)" "Deferred task title" "Full description" conductor 3
   ```
 
 **If phase is "exploring":**
 - Scan and pick the weakest dimension:
   ```bash
-  bash "$SCRIPT_DIR/scripts/explore-scan.sh" "$(pwd)" "$SCRIPT_DIR/scripts/conductor-state.sh"
-  bash "$SCRIPT_DIR/scripts/conductor-state.sh" explore-pick "$(pwd)"
+  python3 "$SCRIPT_DIR/scripts/explore-scan.py" "$(pwd)" "$SCRIPT_DIR/scripts/conductor-state.py"
+  python3 "$SCRIPT_DIR/scripts/conductor-state.py" explore-pick "$(pwd)"
   ```
 - Map that dimension to a sprint direction:
   - `test_coverage` -> "Audit test coverage. Find untested code paths. Write tests for the most critical gaps."
@@ -136,7 +136,7 @@ bash "$SCRIPT_DIR/scripts/backlog.sh" update "$(pwd)" "<item-id>" priority 2
 **If exploring and all dimensions scored >= 7 (project feels solid):**
 - Check the backlog for pending work before stopping:
   ```bash
-  BACKLOG_ITEM=$(bash "$SCRIPT_DIR/scripts/backlog.sh" pick "$(pwd)" 2>/dev/null) || true
+  BACKLOG_ITEM=$(python3 "$SCRIPT_DIR/scripts/backlog.py" pick "$(pwd)" 2>/dev/null) || true
   ```
 - If an item was returned, use its description as the sprint direction
 - If backlog is also empty, the project is genuinely solid — stop the session
@@ -144,7 +144,7 @@ bash "$SCRIPT_DIR/scripts/backlog.sh" update "$(pwd)" "<item-id>" priority 2
 ### 2. Dispatch — Run the Sprint
 
 ```bash
-bash "$SCRIPT_DIR/scripts/conductor-state.sh" sprint-start "$(pwd)" "$SPRINT_DIRECTION"
+python3 "$SCRIPT_DIR/scripts/conductor-state.py" sprint-start "$(pwd)" "$SPRINT_DIRECTION"
 SPRINT_NUM=$(python3 -c "import json; d=json.load(open('.autonomous/conductor-state.json')); print(len(d['sprints']))")
 SPRINT_BRANCH="${SESSION_BRANCH}-sprint-${SPRINT_NUM}"
 git checkout -b "$SPRINT_BRANCH"
@@ -153,20 +153,20 @@ git checkout -b "$SPRINT_BRANCH"
 PREV_SUMMARY=""
 [ -f ".autonomous/sprint-$((SPRINT_NUM-1))-summary.json" ] && \
   PREV_SUMMARY=$(cat ".autonomous/sprint-$((SPRINT_NUM-1))-summary.json")
-bash "$SCRIPT_DIR/scripts/build-sprint-prompt.sh" "$(pwd)" "$SCRIPT_DIR" "$SPRINT_NUM" "$SPRINT_DIRECTION" "$PREV_SUMMARY"
-bash "$SCRIPT_DIR/scripts/dispatch.sh" "$(pwd)" .autonomous/sprint-prompt.md "sprint-$SPRINT_NUM"
+python3 "$SCRIPT_DIR/scripts/build-sprint-prompt.py" "$(pwd)" "$SCRIPT_DIR" "$SPRINT_NUM" "$SPRINT_DIRECTION" "$PREV_SUMMARY"
+python3 "$SCRIPT_DIR/scripts/dispatch.py" "$(pwd)" .autonomous/sprint-prompt.md "sprint-$SPRINT_NUM"
 ```
 
 ### 3. Monitor — Wait for Sprint Completion
 
 ```bash
-bash "$SCRIPT_DIR/scripts/monitor-sprint.sh" "$(pwd)" "$SPRINT_NUM"
+python3 "$SCRIPT_DIR/scripts/monitor-sprint.py" "$(pwd)" "$SPRINT_NUM"
 ```
 
 ### 4. Evaluate — Read Results and Decide Next
 
 ```bash
-eval "$(bash "$SCRIPT_DIR/scripts/evaluate-sprint.sh" "$(pwd)" "$SCRIPT_DIR" "$SPRINT_NUM")"
+eval "$(python3 "$SCRIPT_DIR/scripts/evaluate-sprint.py" "$(pwd)" "$SCRIPT_DIR" "$SPRINT_NUM")"
 ```
 
 **Verify independently** (don't just trust the summary):
@@ -180,20 +180,20 @@ commits, override to "false".
 **Merge or discard the sprint branch:**
 
 ```bash
-bash "$SCRIPT_DIR/scripts/merge-sprint.sh" "$SESSION_BRANCH" "$SPRINT_BRANCH" "$SPRINT_NUM" "$STATUS" "$SUMMARY"
+python3 "$SCRIPT_DIR/scripts/merge-sprint.py" "$SESSION_BRANCH" "$SPRINT_BRANCH" "$SPRINT_NUM" "$STATUS" "$SUMMARY"
 ```
 
 **If exploring**: Score the dimension after the sprint:
 ```bash
 if [ "$PHASE" = "exploring" ]; then
-  bash "$SCRIPT_DIR/scripts/conductor-state.sh" explore-score "$(pwd)" "$DIMENSION" "$SCORE"
+  python3 "$SCRIPT_DIR/scripts/conductor-state.py" explore-score "$(pwd)" "$DIMENSION" "$SCORE"
 fi
 ```
 
 **If this sprint consumed a backlog item, mark it done:**
 ```bash
 if [ -n "${BACKLOG_ITEM_ID:-}" ] && [ "$STATUS" = "complete" ]; then
-  bash "$SCRIPT_DIR/scripts/backlog.sh" update "$(pwd)" "$BACKLOG_ITEM_ID" status done 2>/dev/null || true
+  python3 "$SCRIPT_DIR/scripts/backlog.py" update "$(pwd)" "$BACKLOG_ITEM_ID" status done 2>/dev/null || true
 fi
 ```
 
@@ -222,7 +222,7 @@ session summary that classifies work into features.
 echo "=== SESSION COMMITS ==="
 git log main..$SESSION_BRANCH --oneline --no-merges
 echo "=== CONDUCTOR STATE ==="
-bash "$SCRIPT_DIR/scripts/conductor-state.sh" read "$(pwd)" 2>/dev/null || echo "STATE_UNAVAILABLE"
+python3 "$SCRIPT_DIR/scripts/conductor-state.py" read "$(pwd)" 2>/dev/null || echo "STATE_UNAVAILABLE"
 ```
 
 **If zero commits:** Write a minimal summary to `.autonomous/session-summary.md`:

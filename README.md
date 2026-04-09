@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Skill-blueviolet)](https://claude.ai/code)
 [![AgentSkills](https://img.shields.io/badge/AgentSkills-Standard-green)](https://agentskills.io)
-[![Bash](https://img.shields.io/badge/Bash-Script-4EAA25?logo=gnu-bash&logoColor=white)](scripts/)
+[![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](scripts/)
 
 <br>
 
@@ -84,8 +84,8 @@ Then run `/autonomous-skill` as usual. The conductor, sprint masters, and worker
 ### Standalone (outside Claude Code)
 
 ```bash
-# Direct bash invocation via loop.sh
-AUTONOMOUS_DIRECTION="fix auth bugs" bash scripts/loop.sh /path/to/project
+# Direct CLI invocation via loop.py
+AUTONOMOUS_DIRECTION="fix auth bugs" python3 scripts/loop.py /path/to/project
 ```
 
 ---
@@ -132,7 +132,7 @@ The project-level override beats the skill-root default at `~/.claude/skills/aut
 
 ## How It Works
 
-1. **Persona** — `persona.sh` reads your git history + project docs to understand your coding style. Writes `OWNER.md`.
+1. **Persona** — `persona.py` reads your git history + project docs to understand your coding style. Writes `OWNER.md`.
 2. **Discovery** — The conductor talks to you to understand the mission. If you passed a direction in args, it confirms and moves on.
 3. **Session** — Creates an `auto/session-TIMESTAMP` branch and initializes `conductor-state.json`.
 4. **Conductor loop** — Plan → Dispatch → Monitor → Evaluate → Repeat:
@@ -159,7 +159,7 @@ When the directed mission is complete, the conductor autonomously explores 8 dim
 | `performance` | N+1 queries, blocking I/O, missing caching |
 | `dx` | CLI help text, error messages, setup instructions |
 
-Dimensions are scored via fast bash heuristics (`explore-scan.sh`), and the weakest is selected for each exploration sprint.
+Dimensions are scored via fast Python heuristics (`explore-scan.py`), and the weakest is selected for each exploration sprint.
 
 ### Comms Protocol
 
@@ -183,7 +183,7 @@ Valid statuses: `idle`, `waiting`, `answered`, `done`.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MAX_SPRINTS` (via args) | `10` | Max conductor sprints |
-| `MAX_ITERATIONS` | `50` | Max iterations for loop.sh standalone mode |
+| `MAX_ITERATIONS` | `50` | Max iterations for loop.py standalone mode |
 | `CC_TIMEOUT` | `900` | Timeout per CC invocation (seconds) |
 | `AUTONOMOUS_DIRECTION` | _(none)_ | Session focus (e.g., "fix auth bugs") |
 | `MAX_COST_USD` | _(none)_ | Stop when total cost exceeds this |
@@ -203,23 +203,23 @@ autonomous-skill/
 │   ├── gstack/template.md            # Allow/Block sections for gstack toolchain
 │   └── default/template.md           # Generic fallback, no toolchain assumptions
 ├── scripts/
-│   ├── startup.sh                    # SCRIPT_DIR resolution + project context (shared)
-│   ├── parse-args.sh                 # Parse ARGS → _MAX_SPRINTS + _DIRECTION
-│   ├── session-init.sh               # Create session branch, init state + backlog
-│   ├── build-sprint-prompt.sh        # Inline SPRINT.md + params → sprint-prompt.md
-│   ├── dispatch.sh                   # tmux/headless session dispatch
-│   ├── monitor-sprint.sh             # Poll for sprint-summary.json
-│   ├── monitor-worker.sh             # Poll comms.json + tmux/process liveness
-│   ├── evaluate-sprint.sh            # Read summary JSON, update conductor state
-│   ├── merge-sprint.sh               # Merge or discard sprint branch
-│   ├── write-summary.sh              # Generate sprint-summary.json
-│   ├── conductor-state.sh            # State management (atomic writes, PID lock)
-│   ├── explore-scan.sh               # 8-dimension project scanner
-│   ├── backlog.sh                    # Cross-session persistent backlog
-│   ├── persona.sh                    # OWNER.md auto-generation
-│   ├── loop.sh                       # Standalone launcher (outside CC)
-│   ├── master-poll.sh                # Manual master polling for comms.json
-│   └── master-watch.sh               # Dual-channel monitor (comms + JSONL)
+│   ├── startup.py                    # SCRIPT_DIR resolution + project context (shared)
+│   ├── parse-args.py                 # Parse ARGS → _MAX_SPRINTS + _DIRECTION
+│   ├── session-init.py               # Create session branch, init state + backlog
+│   ├── build-sprint-prompt.py        # Inline SPRINT.md + params → sprint-prompt.md
+│   ├── dispatch.py                   # tmux/headless session dispatch
+│   ├── monitor-sprint.py             # Poll for sprint-summary.json
+│   ├── monitor-worker.py             # Poll comms.json + tmux/process liveness
+│   ├── evaluate-sprint.py            # Read summary JSON, update conductor state
+│   ├── merge-sprint.py               # Merge or discard sprint branch
+│   ├── write-summary.py              # Generate sprint-summary.json
+│   ├── conductor-state.py            # State management (atomic writes, PID lock)
+│   ├── explore-scan.py               # 8-dimension project scanner
+│   ├── backlog.py                    # Cross-session persistent backlog
+│   ├── persona.py                    # OWNER.md auto-generation
+│   ├── loop.py                       # Standalone launcher (outside CC)
+│   ├── master-poll.py                # Manual master polling for comms.json
+│   └── master-watch.py               # Dual-channel monitor (comms + JSONL)
 ├── tests/
 │   ├── test_helpers.sh               # Shared test framework
 │   ├── test_conductor.sh             # 99 tests: state, phase transitions, exploration
@@ -274,7 +274,7 @@ bash tests/test_persona.sh      # 20 tests
 bash tests/test_explore_scan.sh # 45 tests
 bash tests/test_loop.sh         # 20 tests
 bash tests/test_backlog.sh      # 76 tests
-shellcheck scripts/*.sh         # lint all shell scripts
+python3 -m compileall scripts   # quick syntax check for Python helpers
 ```
 
 The test harness uses `tests/claude` (a mock CC binary) controlled by env vars:

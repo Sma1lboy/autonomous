@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for scripts/persona.sh
+# Tests for scripts/persona.py
 # Uses tests/claude mock binary — no real API calls.
 #
 # OWNER.md is now GLOBAL (lives in skill root dir, not per-project).
@@ -10,7 +10,7 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/test_helpers.sh"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PERSONA_SH="$REPO_ROOT/scripts/persona.sh"
+PERSONA_SH="$REPO_ROOT/scripts/persona.py"
 GLOBAL_OWNER="$REPO_ROOT/OWNER.md"
 
 # Intercept 'claude' with mock before real binary
@@ -51,7 +51,7 @@ echo "1. OWNER.md already exists (global)"
 remove_global_owner
 echo "# Existing Persona" > "$GLOBAL_OWNER"
 T=$(new_tmp)
-OUT=$(bash "$PERSONA_SH" "$T" 2>/dev/null)
+OUT=$(python3 "$PERSONA_SH" "$T" 2>/dev/null)
 # Output path may contain ../ — normalize both for comparison
 REAL_OUT=$(cd "$(dirname "$OUT")" && echo "$(pwd)/$(basename "$OUT")")
 REAL_EXPECT=$(cd "$(dirname "$GLOBAL_OWNER")" && echo "$(pwd)/$(basename "$GLOBAL_OWNER")")
@@ -63,7 +63,7 @@ echo ""
 echo "2. No context → copies template"
 remove_global_owner
 T=$(new_tmp)
-bash "$PERSONA_SH" "$T" >/dev/null 2>&1
+python3 "$PERSONA_SH" "$T" >/dev/null 2>&1
 assert_file_exists "$GLOBAL_OWNER" "OWNER.md created in skill dir"
 assert_file_contains "$GLOBAL_OWNER" "Priorities" "template content present"
 
@@ -87,7 +87,7 @@ Breaking tests
 
 ## Current focus
 Test coverage"
-  bash "$PERSONA_SH" "$T" >/dev/null 2>&1
+  python3 "$PERSONA_SH" "$T" >/dev/null 2>&1
   unset MOCK_CLAUDE_OUTPUT
   assert_file_exists "$GLOBAL_OWNER" "OWNER.md created in skill dir"
   assert_file_contains "$GLOBAL_OWNER" "Ship fast" "generated content written"
@@ -116,7 +116,7 @@ Big rewrites
 
 ## Current focus
 Refactor auth"
-  bash "$PERSONA_SH" "$T" >/dev/null 2>&1
+  python3 "$PERSONA_SH" "$T" >/dev/null 2>&1
   unset MOCK_CLAUDE_OUTPUT
   assert_file_exists "$GLOBAL_OWNER" "OWNER.md created in skill dir"
   assert_file_contains "$GLOBAL_OWNER" "Code quality" "git-history-based persona written"
@@ -144,7 +144,7 @@ Over-engineering
 
 ## Current focus
 Onboarding flow"
-  bash "$PERSONA_SH" "$T" >/dev/null 2>&1
+  python3 "$PERSONA_SH" "$T" >/dev/null 2>&1
   unset MOCK_CLAUDE_OUTPUT
   assert_file_exists "$GLOBAL_OWNER" "OWNER.md created in skill dir"
   assert_file_contains "$GLOBAL_OWNER" "User experience" "README-based persona written"
@@ -160,7 +160,7 @@ T=$(new_tmp)
 echo "# CLAUDE.md" > "$T/CLAUDE.md"
 export MOCK_CLAUDE_OUTPUT="FAIL_TEST_SENTINEL_SHOULD_NOT_APPEAR"
 export MOCK_CLAUDE_EXIT=1
-bash "$PERSONA_SH" "$T" >/dev/null 2>&1
+python3 "$PERSONA_SH" "$T" >/dev/null 2>&1
 unset MOCK_CLAUDE_EXIT MOCK_CLAUDE_OUTPUT
 assert_file_exists "$GLOBAL_OWNER" "OWNER.md still created"
 assert_file_contains "$GLOBAL_OWNER" "Priorities" "template used as fallback"
@@ -172,8 +172,8 @@ echo "7. Idempotent — second call returns same file"
 remove_global_owner
 echo "# Fixed Content" > "$GLOBAL_OWNER"
 T=$(new_tmp)
-bash "$PERSONA_SH" "$T" >/dev/null 2>&1
-bash "$PERSONA_SH" "$T" >/dev/null 2>&1
+python3 "$PERSONA_SH" "$T" >/dev/null 2>&1
+python3 "$PERSONA_SH" "$T" >/dev/null 2>&1
 assert_file_contains "$GLOBAL_OWNER" "Fixed Content" "content unchanged after second call"
 
 # 8. OWNER.md is NOT created in project dir
@@ -181,7 +181,7 @@ echo ""
 echo "8. OWNER.md is global, not per-project"
 remove_global_owner
 T=$(new_tmp)
-bash "$PERSONA_SH" "$T" >/dev/null 2>&1
+python3 "$PERSONA_SH" "$T" >/dev/null 2>&1
 assert_file_exists "$GLOBAL_OWNER" "OWNER.md created in skill dir"
 assert_file_not_exists "$T/OWNER.md" "no OWNER.md in project dir"
 
@@ -190,15 +190,15 @@ assert_file_not_exists "$T/OWNER.md" "no OWNER.md in project dir"
 # ═══════════════════════════════════════════════════════════════════════════
 echo ""
 echo "9. --help flag"
-HELP=$(bash "$PERSONA_SH" --help 2>&1)
+HELP=$(python3 "$PERSONA_SH" --help 2>&1)
 assert_contains "$HELP" "Usage:" "--help shows usage"
 assert_contains "$HELP" "OWNER.md" "--help mentions OWNER.md"
 assert_contains "$HELP" "project-dir" "--help mentions project-dir arg"
 
-bash "$PERSONA_SH" --help >/dev/null 2>&1
+python3 "$PERSONA_SH" --help >/dev/null 2>&1
 assert_eq "$?" "0" "--help exits with code 0"
 
-HELP_SHORT=$(bash "$PERSONA_SH" -h 2>&1)
+HELP_SHORT=$(python3 "$PERSONA_SH" -h 2>&1)
 assert_contains "$HELP_SHORT" "Usage:" "-h also shows usage"
 
 print_results
