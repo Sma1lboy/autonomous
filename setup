@@ -37,6 +37,7 @@ SKILLS=(
   "autonomous:auto"
   "quickdo:quickdo"
   "quickdo:qd"
+  "explore-ralph-loop:explore-ralph-loop"
 )
 
 # ─── Uninstall ────────────────────────────────────────────────
@@ -49,6 +50,7 @@ if [ "$UNINSTALL" -eq 1 ]; then
       echo "Removed: $target"
     fi
   done
+  bash "$SKILL_DIR/scripts/register-ralph-loops.sh" --uninstall 2>/dev/null || true
   echo "Done. Skills unregistered."
   exit 0
 fi
@@ -103,3 +105,6 @@ for entry in "${SKILLS[@]}"; do
 done
 echo ""
 echo "Run '/autonomous' or '/quickdo' in any git repo."
+
+# Register any previously generated ralph-loop skills
+bash "$SKILL_DIR/scripts/register-ralph-loops.sh" 2>/dev/null || true
