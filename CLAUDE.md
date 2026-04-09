@@ -169,6 +169,36 @@ Test harness uses `tests/claude` (mock CC binary) controlled by env vars:
 - `MOCK_CLAUDE_DELAY` — sleep N seconds (for timeout tests)
 - `MOCK_CLAUDE_EXIT` — exit code to return
 
+## Development workflow
+
+When contributing to this project, follow these rules:
+
+### Branching & PRs
+- Feature work goes on a branch (`feat/`, `fix/`, `refactor/`, `docs/`), then a PR
+- Direct pushes to main only for trivial doc fixes (typos, comments)
+- Rebase onto latest main before opening a PR
+
+### Changelog
+- Update `CHANGELOG.md` with every PR that changes user-facing behavior
+- Follow [Keep a Changelog](https://keepachangelog.com) format: Added, Fixed, Changed, Removed
+- Group under the current unreleased version at the top
+- Bump `VERSION` file when cutting a release
+
+### Testing
+- New scripts must have tests. New behavior in existing scripts must have test coverage.
+- Run `python3 -m compileall scripts` before committing Python changes
+- Run affected test suites before pushing
+
+### Commit messages
+- Conventional commits: `feat:`, `fix:`, `refactor:`, `docs:`, `chore:`, `perf:`
+- Lowercase, imperative, concise
+- No AI attribution (`Co-Authored-By`, `Generated with`)
+
+### CLAUDE.md maintenance
+- Update Key Files section when adding/removing/renaming files
+- Update test counts when adding tests
+- Keep Architecture diagram current
+
 ## Skill routing
 
 When the user's request matches an available skill, ALWAYS invoke it using the Skill
