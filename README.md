@@ -34,16 +34,23 @@ Requirements: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), Git
 
 Optional: [tmux](https://github.com/tmux/tmux) (visible worker windows), [jq](https://jqlang.github.io/jq/) (persona generation)
 
-Open Claude Code and paste this. Claude does the rest:
-
+```bash
+git clone https://github.com/Sma1lboy/autonomous-skill.git ~/.claude/skills/autonomous-skill
+cd ~/.claude/skills/autonomous-skill && ./setup
 ```
-Install autonomous-skill: run git clone --single-branch --depth 1 https://github.com/Sma1lboy/autonomous-skill.git ~/.claude/skills/autonomous-skill.
-```
 
-Or install manually:
+This registers `/autonomous` and `/quickdo` as Claude Code skills.
+
+To update:
 
 ```bash
-git clone --single-branch --depth 1 https://github.com/Sma1lboy/autonomous-skill.git ~/.claude/skills/autonomous-skill
+cd ~/.claude/skills/autonomous-skill && git pull && ./setup
+```
+
+To uninstall:
+
+```bash
+cd ~/.claude/skills/autonomous-skill && ./setup --uninstall
 ```
 
 Then in any git repo, open Claude Code and run `/autonomous` or `/quickdo`.

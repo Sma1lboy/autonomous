@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# setup — register autonomous-skill skills with Claude Code
+#
+# Usage:
+#   ./setup              # normal install (from ~/.claude/skills/autonomous-skill/)
+#   ./setup --local      # dev install (symlink from current working copy)
+#   ./setup --uninstall  # remove all registered skills
+set -euo pipefail
+
+SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+SKILLS_ROOT="$HOME/.claude/skills"
+
+# ─── Parse flags ──────────────────────────────────────────────
+UNINSTALL=0
+LOCAL=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --uninstall) UNINSTALL=1; shift ;;
+    --local) LOCAL=1; shift ;;
+    -h|--help)
+      echo "Usage: ./setup [--local] [--uninstall]"
+      echo ""
+      echo "  --local      Dev mode: symlink from current working copy"
+      echo "  --uninstall  Remove all registered skills"
+      exit 0
+      ;;
+    *) echo "Unknown flag: $1" >&2; exit 1 ;;
+  esac
+done
+
+# ─── Public skills to register ────────────────────────────────
+# Each entry: <directory-in-repo> <skill-name>
+SKILLS=(
+  "autonomous:autonomous"
+  "quickdo:quickdo"
+)
+
+# ─── Uninstall ────────────────────────────────────────────────
+if [ "$UNINSTALL" -eq 1 ]; then
+  for entry in "${SKILLS[@]}"; do
+    name="${entry##*:}"
+    target="$SKILLS_ROOT/$name"
+    if [ -d "$target" ] || [ -L "$target" ]; then
+      rm -rf "$target"
+      echo "Removed: $target"
+    fi
+  done
+  echo "Done. Skills unregistered."
+  exit 0
+fi
+
+# ─── Install ──────────────────────────────────────────────────
+echo "Installing autonomous-skill from: $SKILL_DIR"
+echo ""
+
+for entry in "${SKILLS[@]}"; do
+  dir="${entry%%:*}"
+  name="${entry##*:}"
+  source_skill="$SKILL_DIR/$dir/SKILL.md"
+  target="$SKILLS_ROOT/$name"
+
+  if [ ! -f "$source_skill" ]; then
+    echo "SKIP: $source_skill not found"
+    continue
+  fi
+
+  # Clean up old install (stale symlink or directory)
+  if [ -L "$target" ]; then
+    rm -f "$target"
+  elif [ -d "$target" ]; then
+    # Only remove if it's our managed directory (contains only SKILL.md symlink)
+    if [ -L "$target/SKILL.md" ]; then
+      rm -rf "$target"
+    else
+      echo "SKIP: $target exists and is not managed by us"
+      continue
+    fi
+  fi
+
+  # Create real directory with symlinked SKILL.md
+  mkdir -p "$target"
+  ln -snf "$source_skill" "$target/SKILL.md"
+  echo "  /$name → $source_skill"
+done
+
+echo ""
+echo "Done. Available skills:"
+for entry in "${SKILLS[@]}"; do
+  name="${entry##*:}"
+  echo "  /$name"
+done
+echo ""
+echo "Run '/autonomous' or '/quickdo' in any git repo."
