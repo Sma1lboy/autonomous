@@ -17,5 +17,8 @@ COMPETITIVE.md
 *.jsonl
 /ref/**
 
+# Generated loop skills (per-user, never committed)
+ralph-loop-skills/
+
 # Runtime state (per-session, never committed)
 .autonomous/

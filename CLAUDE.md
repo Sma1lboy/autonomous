@@ -57,6 +57,9 @@ Conductor (SKILL.md, user's CC session)
 - `templates/gstack/template.md` — Worker slash-command set for the gstack toolchain
 - `templates/default/template.md` — Generic worker guidance with no toolchain assumptions
 - `scripts/build-sprint-prompt.py` — Inlines SPRINT.md + template allow/block sections into the sprint master prompt
+- `explore-ralph-loop/SKILL.md` — Explore Ralph Loop: detects toolchain, captures execute-verify-fix patterns as reusable skills
+- `scripts/register-ralph-loops.sh` — Dynamic scanner: symlinks ralph-loop-skills/ to ~/.claude/skills/
+- `ralph-loop-skills/` — Generated loop skills (gitignored, per-user)
 
 ## How it works
 
