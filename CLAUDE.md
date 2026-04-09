@@ -25,6 +25,7 @@ Conductor (SKILL.md, user's CC session)
 
 - `autonomous/SKILL.md` — Conductor: multi-sprint orchestrator, phase management, exploration strategy
 - `SPRINT.md` — Sprint master: per-sprint execution (Sense->Direct->Respond->Summarize)
+- `scripts/update-check.sh` — Version check: compares local VERSION against GitHub, 60-min cache
 - `scripts/startup.py` — SCRIPT_DIR resolution + project context (shared by all layers)
 - `scripts/parse-args.py` — Parse ARGS → _MAX_SPRINTS + _DIRECTION
 - `scripts/session-init.py` — Create session branch, init conductor state + backlog

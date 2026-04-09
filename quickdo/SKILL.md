@@ -20,9 +20,18 @@ if [ ! -d "$SCRIPT_DIR/scripts" ]; then
     if [ -d "$dir/scripts" ]; then SCRIPT_DIR="$dir"; break; fi
   done
 fi
+_UPD=$(bash "$SCRIPT_DIR/scripts/update-check.sh" 2>/dev/null || true)
+[ -n "$_UPD" ] && echo "$_UPD" || true
 python3 "$SCRIPT_DIR/scripts/persona.py" "$(pwd)" >/dev/null 2>&1
 python3 "$SCRIPT_DIR/scripts/startup.py" "$(pwd)"
 ```
+
+If the startup block outputs `UPDATE_AVAILABLE <old> <new>`, tell the user:
+
+> A newer version is available (current: `<old>`, latest: `<new>`).
+> Update with: `cd ~/.claude/skills/autonomous-skill && git pull`
+
+Then continue normally.
 
 ## Pre-flight
 
