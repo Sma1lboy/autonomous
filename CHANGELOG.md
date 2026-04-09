@@ -2,6 +2,14 @@
 
 All notable changes to autonomous-skill are documented here.
 
+## [0.6.0] — 2026-04-09
+
+### Added
+- `/explore-ralph-loop` skill — detects Ralph Loop patterns from conversation history and captures them as reusable skills
+- `scripts/register-ralph-loops.sh` — dynamic registration of generated loop skills to `~/.claude/skills/`
+- `ralph-loop-skills/` directory for generated loop skills (gitignored, per-user)
+- Generated loop skills delegate execution to `/quickdo` with canned directions
+
 ## [0.5.0] — 2026-04-09
 
 ### Added
