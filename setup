@@ -72,8 +72,8 @@ for entry in "${SKILLS[@]}"; do
   if [ -L "$target" ]; then
     rm -f "$target"
   elif [ -d "$target" ]; then
-    # Only remove if it's our managed directory (contains only SKILL.md symlink)
-    if [ -L "$target/SKILL.md" ]; then
+    # Only remove if it's our managed directory (has .autonomous-skill marker)
+    if [ -f "$target/.autonomous-skill" ] || [ -L "$target/SKILL.md" ]; then
       rm -rf "$target"
     else
       echo "SKIP: $target exists and is not managed by us"
@@ -81,9 +81,17 @@ for entry in "${SKILLS[@]}"; do
     fi
   fi
 
-  # Create real directory with symlinked SKILL.md
+  # Create directory with SKILL.md
   mkdir -p "$target"
-  ln -snf "$source_skill" "$target/SKILL.md"
+  touch "$target/.autonomous-skill"  # marker so we know we own this dir
+
+  if [ "$dir" = "$name" ]; then
+    # Primary skill: symlink to source
+    ln -snf "$source_skill" "$target/SKILL.md"
+  else
+    # Alias: copy and rewrite the name field in frontmatter
+    sed "s/^name: .*/name: $name/" "$source_skill" > "$target/SKILL.md"
+  fi
   echo "  /$name → $source_skill"
 done
 
