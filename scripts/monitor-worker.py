@@ -28,6 +28,17 @@ def tmux_available() -> bool:
     ).returncode == 0
 
 
+def tmux_kill(name: str) -> None:
+    if shutil.which("tmux") is None:
+        return
+    subprocess.run(
+        ["tmux", "kill-window", "-t", name],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+
+
 def capture_pane(window: str) -> str:
     result = subprocess.run(
         ["tmux", "capture-pane", "-t", window, "-p", "-S", "-5"],
@@ -80,6 +91,7 @@ def main(argv: list[str]) -> int:
         comms = load_comms(comms_file)
         status = comms.get("status", "idle")
         if status == "done":
+            tmux_kill(args.window_name)
             print("=== WORKER DONE ===")
             print(json.dumps(comms, indent=2))
             print("WORKER_DONE")
@@ -103,6 +115,7 @@ def main(argv: list[str]) -> int:
             if latest and latest != last_commit and any(
                 token in pane for token in ("❯", "Cogitated", "idle")
             ):
+                tmux_kill(args.window_name)
                 print("=== WORKER DONE (detected via new commit + idle TUI) ===")
                 print(f"Latest commit: {latest}")
                 print("WORKER_DONE")
