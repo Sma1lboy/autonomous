@@ -28,32 +28,19 @@ Drop it into any git repo, run `/autonomous`, go to sleep.
 
 ---
 
-## Install — 30 seconds
+## Install — 10 seconds
 
 Requirements: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), Git, Python 3.9+
 
 Optional: [tmux](https://github.com/tmux/tmux) (visible worker windows), [jq](https://jqlang.github.io/jq/) (persona generation)
 
-```bash
-git clone https://github.com/Sma1lboy/autonomous-skill.git ~/.claude/skills/autonomous-skill
-cd ~/.claude/skills/autonomous-skill && ./setup
+Paste this into Claude Code:
+
+```
+Install autonomous-skill: git clone https://github.com/Sma1lboy/autonomous-skill.git ~/.claude/skills/autonomous-skill && cd ~/.claude/skills/autonomous-skill && ./setup
 ```
 
-This registers `/autonomous` and `/quickdo` as Claude Code skills.
-
-To update:
-
-```bash
-cd ~/.claude/skills/autonomous-skill && git pull && ./setup
-```
-
-To uninstall:
-
-```bash
-cd ~/.claude/skills/autonomous-skill && ./setup --uninstall
-```
-
-Then in any git repo, open Claude Code and run `/autonomous` or `/quickdo`.
+That's it. Open any git repo and run `/autonomous` or `/quickdo`.
 
 ---
 
