@@ -258,6 +258,15 @@ echo "=== CONDUCTOR STATE ==="
 python3 "$SCRIPT_DIR/scripts/conductor-state.py" read "$(pwd)" 2>/dev/null || echo "STATE_UNAVAILABLE"
 ```
 
+**Emit session-end event** (non-blocking; safe to skip if it fails):
+```bash
+TOTAL_COMMITS=$(git rev-list --count "main..$SESSION_BRANCH" 2>/dev/null || echo 0)
+TOTAL_SPRINTS=$(python3 -c "import json; d=json.load(open('.autonomous/conductor-state.json')); print(len(d.get('sprints', [])))" 2>/dev/null || echo 0)
+python3 "$SCRIPT_DIR/scripts/timeline.py" emit "$(pwd)" session-end \
+  total_sprints="$TOTAL_SPRINTS" total_commits="$TOTAL_COMMITS" reason='"wrap-up"' \
+  2>/dev/null || true
+```
+
 **If zero commits:** Write a minimal summary to `.autonomous/session-summary.md`:
 "Session completed with no commits. N sprints attempted, none produced mergeable
 work." Print it. Then stop. Skip the rest of this section.
