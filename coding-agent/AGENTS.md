@@ -176,8 +176,33 @@ guessing. Example:
 ## Phase 3 — Final summary and ready-for-review
 
 Only after two consecutive clean rescans (every dimension ≥ 9, no new
-issues surfacing), update the PR description to the final form and mark
-the PR ready for review.
+issues surfacing) **and** every automated review thread is resolved,
+update the PR description to the final form and mark the PR ready for
+review.
+
+### Automated reviewer gate
+
+Before you mark the PR ready, every unresolved comment from automated
+PR reviewers must be handled. At time of writing the common ones are:
+
+- **GitHub Copilot** inline PR review
+- **CodeRabbit** (`coderabbitai[bot]`)
+- Any other bot that leaves pending review threads
+
+For each unresolved comment:
+
+1. If it is a legitimate issue → fix it, push a new commit, and reply
+   on the thread naming the commit SHA that addressed it.
+2. If it is wrong (false positive, out of scope, disagrees with a
+   deliberate choice) → reply explaining *why* you're not acting on
+   it, then resolve the thread.
+3. Never silently close a thread without a reply — reviewers (and the
+   human merging this PR) need to see your reasoning.
+
+If a thread blocks on information you don't have (production secrets,
+author intent on an ambiguous API), leave the PR in draft and note the
+blocker in **Validation gaps**. That is the only permitted reason to
+stay in draft once the scoreboard bar is met.
 
 If some dimensions are stuck below 9 after repeated attempts (marked
 "stuck" in Phase 2), the PR can still be marked ready, but the stop
