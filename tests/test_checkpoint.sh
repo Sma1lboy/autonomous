@@ -69,7 +69,8 @@ assert_file_contains "$OUT" "add user model" "sprint direction in checkpoint"
 assert_file_contains "$OUT" "Schema + migrations landed" "sprint summary in checkpoint"
 assert_file_contains "$OUT" "1 / 10" "sprint count shown"
 assert_file_contains "$OUT" "2 commits" "commit count shown"
-assert_file_contains "$OUT" "phase: directed" "phase in frontmatter"
+# All YAML scalars are JSON-quoted now (frontmatter injection fix).
+assert_file_contains "$OUT" 'phase: "directed"' "phase in frontmatter (JSON-quoted)"
 assert_file_contains "$OUT" "sprint_count: 1" "sprint count in frontmatter"
 assert_file_contains "$OUT" "commit_count: 2" "commit count in frontmatter"
 
@@ -265,5 +266,125 @@ assert_contains "$BASE2" "checkpoint" "all-special title falls back to 'checkpoi
 # Title with unicode — survives, frontmatter escapes it
 OUT3=$(python3 "$CKPT" save "$T" --title "中文 checkpoint")
 assert_file_contains "$OUT3" "中文 checkpoint" "unicode title preserved in content"
+
+# ── 11. Adversarial regression (Codex review findings) ──────────────────
+
+echo ""
+echo "11. Adversarial regression (Codex findings)"
+
+# P1: `show` previously treated query as a glob, allowing path traversal.
+T=$(make_project)
+python3 "$CONDUCTOR" init "$T" "m" 5 > /dev/null
+python3 "$CKPT" save "$T" --title "legit" > /dev/null
+# Create a file outside the checkpoints dir we could try to read
+echo "SECRET" > "$T/.autonomous/secret.json"
+
+# Path traversal via ../
+if python3 "$CKPT" show "$T" "../secret.json" 2>/dev/null; then
+  fail "show ../secret.json should be rejected"
+else
+  ok "show rejects path traversal via ../"
+fi
+
+# Glob metacharacters must be rejected (query is not a glob anymore)
+if python3 "$CKPT" show "$T" "*" 2>/dev/null; then
+  fail "show with * (glob) should be rejected"
+else
+  ok "show rejects * metacharacter"
+fi
+
+if python3 "$CKPT" show "$T" "?" 2>/dev/null; then
+  fail "show with ? should be rejected"
+else
+  ok "show rejects ? metacharacter"
+fi
+
+if python3 "$CKPT" show "$T" "[abc]" 2>/dev/null; then
+  fail "show with character class should be rejected"
+else
+  ok "show rejects character class"
+fi
+
+if python3 "$CKPT" show "$T" "dir/file" 2>/dev/null; then
+  fail "show with / should be rejected"
+else
+  ok "show rejects path separator"
+fi
+
+# P1: Frontmatter injection via session_id/phase containing YAML-hostile chars
+T=$(make_project)
+mkdir -p "$T/.autonomous"
+# conductor-state with colon, newline, and # in session_id → must not break YAML
+cat > "$T/.autonomous/conductor-state.json" <<'EOF'
+{"session_id": "malicious: injected\nkey: hijacked # comment", "phase": "[{broken", "mission": "ok", "sprints": [], "max_sprints": 5, "exploration": {}}
+EOF
+OUT=$(python3 "$CKPT" save "$T" --title "injection-test")
+# The injected keys MUST NOT appear as top-level YAML keys
+if grep -q "^key: hijacked" "$OUT"; then
+  fail "YAML injection succeeded (new top-level key created)"
+else
+  ok "YAML frontmatter resists : + newline injection"
+fi
+# The weird phase value must be quoted as a string, not interpreted as a list
+assert_file_contains "$OUT" 'phase: "\[{broken"' "hostile phase value is JSON-quoted"
+
+# P1: read_json type safety — non-dict conductor-state.json doesn't crash
+T=$(make_project)
+mkdir -p "$T/.autonomous"
+echo '["this","is","a","list","not","a","dict"]' > "$T/.autonomous/conductor-state.json"
+OUT=$(python3 "$CKPT" save "$T" 2>&1) && RC=0 || RC=$?
+assert_eq "$RC" "0" "non-dict state.json doesn't crash save"
+assert_file_exists "$OUT" "checkpoint written despite bad state shape"
+
+# sprints field as a dict (not list) — previous code iterated and crashed
+T=$(make_project)
+mkdir -p "$T/.autonomous"
+cat > "$T/.autonomous/conductor-state.json" <<'EOF'
+{"session_id":"s","mission":"m","phase":"directed","sprints":{"wrong":"shape"},"exploration":"also wrong"}
+EOF
+OUT=$(python3 "$CKPT" save "$T" 2>&1) && RC=0 || RC=$?
+assert_eq "$RC" "0" "wrong-shape sprints doesn't crash save"
+
+# P2: Same-second same-title saves don't silently overwrite
+T=$(make_project)
+python3 "$CONDUCTOR" init "$T" "m" 5 > /dev/null
+OUT1=$(python3 "$CKPT" save "$T" --title "same-name")
+OUT2=$(python3 "$CKPT" save "$T" --title "same-name")
+[ "$OUT1" != "$OUT2" ] && ok "same-second same-title saves produce different files" || fail "silent overwrite"
+# Both files should exist
+[ -f "$OUT1" ] && [ -f "$OUT2" ] && ok "both same-name checkpoints retained" || fail "one checkpoint lost"
+# Second filename should have -1 suffix
+BASE2=$(basename "$OUT2" .md)
+assert_contains "$BASE2" "same-name-1" "collision resolved with numeric suffix"
+
+# P2: list title extraction decodes JSON escapes
+T=$(make_project)
+python3 "$CONDUCTOR" init "$T" "m" 5 > /dev/null
+python3 "$CKPT" save "$T" --title '中文 title with spaces' > /dev/null
+LIST=$(python3 "$CKPT" list "$T")
+# Title should display the actual unicode, not the \uXXXX escape
+assert_contains "$LIST" "中文 title with spaces" "list shows unicode title verbatim (not JSON-escaped)"
+# Shouldn't show raw escapes
+if echo "$LIST" | grep -q '\\u4e2d'; then
+  fail "list shows raw \\uXXXX escape (JSON decode failed)"
+else
+  ok "list did not leak \\uXXXX escape"
+fi
+
+# P2: Non-UTF8 checkpoint file doesn't crash latest/show
+T=$(make_project)
+mkdir -p "$T/.autonomous/checkpoints"
+printf '\xff\xfe\x00\x00garbage' > "$T/.autonomous/checkpoints/20260419-000001-binary.md"
+LATEST=$(python3 "$CKPT" latest "$T" 2>&1) && RC=0 || RC=$?
+assert_eq "$RC" "0" "latest survives non-UTF8 file"
+SHOWN=$(python3 "$CKPT" show "$T" "binary" 2>&1) && RC=0 || RC=$?
+assert_eq "$RC" "0" "show survives non-UTF8 file"
+
+# Malformed conductor-state.json (valid JSON, missing fields) doesn't crash
+T=$(make_project)
+mkdir -p "$T/.autonomous"
+echo 'null' > "$T/.autonomous/conductor-state.json"
+OUT=$(python3 "$CKPT" save "$T" 2>&1) && RC=0 || RC=$?
+assert_eq "$RC" "0" "null top-level state doesn't crash"
 
 print_results

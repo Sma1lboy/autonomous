@@ -39,10 +39,17 @@ def slugify(text: str, max_len: int = 40) -> str:
 
 
 def read_json(path: Path) -> dict[str, Any]:
+    """Load a JSON file as a dict. Returns {} on any failure — missing file,
+    malformed JSON, wrong top-level type, encoding errors. Callers assume
+    dict shape and use .get() extensively, so non-dict payloads must be
+    filtered out here rather than crash downstream."""
     try:
-        return json.loads(path.read_text())
-    except (json.JSONDecodeError, OSError, FileNotFoundError):
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, FileNotFoundError, UnicodeDecodeError):
         return {}
+    if not isinstance(data, dict):
+        return {}
+    return data
 
 
 def git(project: Path, *args: str) -> str:
@@ -91,6 +98,36 @@ def format_sprint(sprint: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _yaml_scalar(value: Any) -> str:
+    """Serialize any value as a YAML-safe scalar. JSON is a YAML subset so
+    `json.dumps` produces a valid YAML string literal for any input, and
+    handles newlines, colons, `#`, leading `[`/`{`, unicode escapes. Used
+    instead of raw f-string interpolation to prevent frontmatter injection
+    if conductor-state fields contain YAML-hostile characters."""
+    return json.dumps(value if value is not None else "", ensure_ascii=False)
+
+
+def _safe_shape(state: dict[str, Any]) -> dict[str, Any]:
+    """Coerce nested state fields to the shape the renderer expects. Covers
+    the case where conductor-state.json is valid JSON but has wrong types
+    (sprints as dict, exploration as list, etc.) after a refactor or
+    corruption."""
+    sprints = state.get("sprints")
+    if not isinstance(sprints, list):
+        sprints = []
+    exploration = state.get("exploration")
+    if not isinstance(exploration, dict):
+        exploration = {}
+    return {
+        "session_id": state.get("session_id") or "(no session)",
+        "mission": state.get("mission") or "(no mission)",
+        "phase": state.get("phase") or "unknown",
+        "sprints": [s for s in sprints if isinstance(s, dict)],
+        "max_sprints": state.get("max_sprints", "?"),
+        "exploration": {k: v for k, v in exploration.items() if isinstance(v, dict)},
+    }
+
+
 def render_markdown(
     project: Path,
     state: dict[str, Any],
@@ -99,19 +136,24 @@ def render_markdown(
     title: str,
     saved_at: str,
 ) -> str:
-    session_id = state.get("session_id", "(no session)")
-    mission = state.get("mission", "(no mission)")
-    phase = state.get("phase", "unknown")
-    sprints = state.get("sprints", [])
-    max_sprints = state.get("max_sprints", "?")
-    exploration = state.get("exploration", {})
+    safe = _safe_shape(state)
+    session_id = safe["session_id"]
+    mission = safe["mission"]
+    phase = safe["phase"]
+    sprints = safe["sprints"]
+    max_sprints = safe["max_sprints"]
+    exploration = safe["exploration"]
 
     total_commits = sum(
         len(s.get("commits", [])) for s in sprints if isinstance(s.get("commits"), list)
     )
 
+    backlog_items = backlog.get("items")
+    if not isinstance(backlog_items, list):
+        backlog_items = []
     open_items = [
-        item for item in backlog.get("items", []) if item.get("status") == "open"
+        item for item in backlog_items
+        if isinstance(item, dict) and item.get("status") == "open"
     ]
     untriaged = sum(1 for item in open_items if not item.get("triaged", True))
     next_item = None
@@ -124,17 +166,20 @@ def render_markdown(
 
     lines: list[str] = []
 
-    # YAML frontmatter — for parseability if we later want to diff checkpoints
+    # YAML frontmatter — every scalar goes through _yaml_scalar to prevent
+    # injection if a field contains `:`, newlines, `#`, leading `[`/`{`,
+    # or other YAML-hostile characters. JSON is a YAML subset so quoted JSON
+    # strings are valid YAML strings.
     lines.append("---")
-    lines.append(f"saved_at: {saved_at}")
-    lines.append(f"session_id: {session_id}")
-    lines.append(f"session_branch: {git_state.get('current_branch', '')}")
-    lines.append(f"phase: {phase}")
+    lines.append(f"saved_at: {_yaml_scalar(saved_at)}")
+    lines.append(f"session_id: {_yaml_scalar(session_id)}")
+    lines.append(f"session_branch: {_yaml_scalar(git_state.get('current_branch', ''))}")
+    lines.append(f"phase: {_yaml_scalar(phase)}")
     lines.append(f"sprint_count: {len(sprints)}")
-    lines.append(f"max_sprints: {max_sprints}")
+    lines.append(f"max_sprints: {max_sprints if isinstance(max_sprints, (int, str)) else '?'}")
     lines.append(f"commit_count: {total_commits}")
     lines.append(f"backlog_open: {len(open_items)}")
-    lines.append(f"title: {json.dumps(title)}")
+    lines.append(f"title: {_yaml_scalar(title)}")
     lines.append("---")
     lines.append("")
 
@@ -249,26 +294,35 @@ def cmd_save(project: Path, args: list[str]) -> None:
     backlog = read_json(project / ".autonomous" / "backlog.json")
     git_state = gather_git_state(project)
 
-    # Auto-generate title if none provided
+    # Auto-generate title if none provided. Use _safe_shape so a malformed
+    # sprints field (dict, scalar, missing) can't crash title generation.
     if not title:
-        sprints = state.get("sprints", [])
-        if sprints:
-            last = sprints[-1]
-            title = f"sprint {last.get('number', len(sprints))} — {last.get('status', 'unknown')}"
+        safe = _safe_shape(state)
+        sprints_safe = safe["sprints"]
+        if sprints_safe:
+            last = sprints_safe[-1]
+            title = f"sprint {last.get('number', len(sprints_safe))} — {last.get('status', 'unknown')}"
         else:
             title = "session-start"
 
     saved_at = now_iso()
     ts_filename = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
     slug = slugify(title)
-    filename = f"{ts_filename}-{slug}.md"
 
     ckpt_dir = project / ".autonomous" / "checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
-    target = ckpt_dir / filename
+
+    # Same-second same-slug saves previously silently overwrote. Add a
+    # numeric suffix (-1, -2, ...) if the target already exists.
+    base = f"{ts_filename}-{slug}"
+    target = ckpt_dir / f"{base}.md"
+    seq = 1
+    while target.exists():
+        target = ckpt_dir / f"{base}-{seq}.md"
+        seq += 1
 
     content = render_markdown(project, state, backlog, git_state, title, saved_at)
-    target.write_text(content)
+    target.write_text(content, encoding="utf-8")
     print(str(target))
 
 
@@ -281,18 +335,41 @@ def cmd_list(project: Path, args: list[str]) -> None:
     for f in files:
         # Print: filename\ttitle (if parseable from frontmatter)
         try:
-            head = f.read_text().splitlines()[:20]
+            head = f.read_text(encoding="utf-8", errors="replace").splitlines()[:20]
         except OSError:
             head = []
         title_val = ""
         for line in head:
             if line.startswith("title: "):
-                title_val = line[len("title: "):].strip().strip('"')
+                raw = line[len("title: "):].strip()
+                # Titles are written as JSON strings (_yaml_scalar). Decode
+                # JSON to get the human-readable title back; fall back to the
+                # raw string if parsing fails (older checkpoints, manual edits).
+                try:
+                    parsed = json.loads(raw)
+                    if isinstance(parsed, str):
+                        title_val = parsed
+                    else:
+                        title_val = raw
+                except (json.JSONDecodeError, ValueError):
+                    title_val = raw.strip('"')
                 break
+        # Collapse any newlines in the title — tab-delimited output would
+        # otherwise break downstream parsers.
+        title_val = title_val.replace("\n", " ").replace("\r", " ")
         if title_val:
             print(f"{f.name}\t{title_val}")
         else:
             print(f.name)
+
+
+def _safe_read(path: Path) -> str:
+    """Read a checkpoint file as UTF-8 with lossy decoding on errors. Used
+    so binary / non-UTF8 content never crashes `latest`/`show`."""
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        die(f"failed to read {path.name}: {exc}")
 
 
 def cmd_latest(project: Path, args: list[str]) -> None:
@@ -303,27 +380,60 @@ def cmd_latest(project: Path, args: list[str]) -> None:
     files = sorted(ckpt_dir.glob("*.md"))
     if not files:
         die("No checkpoints yet — run `checkpoint.py save` first")
-    print(files[-1].read_text(), end="")
+    print(_safe_read(files[-1]), end="")
+
+
+def _resolve_checkpoint(ckpt_dir: Path, query: str) -> Path:
+    """Resolve a user-supplied query to a single checkpoint file under
+    `ckpt_dir`. Refuses path traversal — the matched file's resolved path
+    must be inside the resolved ckpt_dir. The query is NOT treated as a
+    glob; glob metacharacters (`*`, `?`, `[`, `/`, backslash) are rejected."""
+    # Reject glob metacharacters and path separators entirely. The query is
+    # meant to be a literal filename fragment, not a glob pattern.
+    if not query or any(ch in query for ch in ("/", "\\", "*", "?", "[", "]", "\0")):
+        die(f"invalid query (contains path or glob metacharacter): {query}")
+    if ".." in query:
+        die(f"invalid query (path traversal): {query}")
+
+    resolved_dir = ckpt_dir.resolve()
+
+    # Literal prefix match first, then substring fallback — both scoped
+    # to files directly under ckpt_dir, no recursion, .md only.
+    candidates = [
+        p for p in ckpt_dir.iterdir()
+        if p.is_file() and p.suffix == ".md" and p.name.startswith(query)
+    ]
+    if not candidates:
+        candidates = [
+            p for p in ckpt_dir.iterdir()
+            if p.is_file() and p.suffix == ".md" and query in p.name
+        ]
+    if not candidates:
+        die(f"No checkpoint matching: {query}")
+    if len(candidates) > 1:
+        names = "\n".join(f"  {m.name}" for m in sorted(candidates))
+        die(f"Ambiguous query '{query}', matches:\n{names}")
+
+    match = candidates[0]
+    # Paranoia: verify the resolved match lives under ckpt_dir even after
+    # symlink resolution. Also ensures Python's Path doesn't surprise us.
+    try:
+        match.resolve().relative_to(resolved_dir)
+    except (ValueError, OSError):
+        die(f"refusing to open path outside checkpoints directory: {match}")
+    return match
 
 
 def cmd_show(project: Path, args: list[str]) -> None:
-    """show <filename-or-prefix>"""
+    """show <filename-or-substring>"""
     if not args:
-        die("Usage: checkpoint.py show <project-dir> <filename-or-prefix>")
+        die("Usage: checkpoint.py show <project-dir> <filename-or-substring>")
     query = args[0]
     ckpt_dir = project / ".autonomous" / "checkpoints"
     if not ckpt_dir.exists():
         die("No checkpoints directory yet")
-    matches = sorted(ckpt_dir.glob(f"{query}*"))
-    if not matches:
-        # Try substring match as fallback
-        matches = sorted(f for f in ckpt_dir.glob("*.md") if query in f.name)
-    if not matches:
-        die(f"No checkpoint matching: {query}")
-    if len(matches) > 1:
-        names = "\n".join(f"  {m.name}" for m in matches)
-        die(f"Ambiguous query '{query}', matches:\n{names}")
-    print(matches[0].read_text(), end="")
+    match = _resolve_checkpoint(ckpt_dir, query)
+    print(_safe_read(match), end="")
 
 
 def usage() -> None:
