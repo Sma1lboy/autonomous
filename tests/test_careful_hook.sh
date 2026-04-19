@@ -44,7 +44,11 @@ assert_eq "$(hook_decision 'pytest tests/')" "ALLOW" "pytest allowed"
 assert_eq "$(hook_decision 'rm foo.txt')" "ALLOW" "rm of single file allowed"
 assert_eq "$(hook_decision 'rm -f foo.txt')" "ALLOW" "rm -f of single file allowed"
 assert_eq "$(hook_decision 'mkdir -p build/output')" "ALLOW" "mkdir allowed"
-assert_eq "$(hook_decision 'echo rm -rf /')" "ALLOW" "quoted-looking dangerous command as echo content allowed"
+# NOTE: `echo rm -rf /` is BLOCKED by design. We removed the first-word
+# whitelist because it was a bypass surface — `echo ok; rm -rf /` would
+# have been allowed through it. Substring matching now catches both, at
+# the cost of this false positive. Rephrase to `echo "removes filesystem"`.
+assert_eq "$(hook_decision 'echo rm -rf /')" "BLOCK" "no first-word bypass: echo containing rm -rf / is blocked"
 
 # ── 2. Catastrophic rm blocked ────────────────────────────────────────────
 
@@ -122,8 +126,14 @@ assert_eq "$(hook_decision 'git push --force-with-lease origin main')" "BLOCK" "
 assert_eq "$(hook_decision 'git push --force origin trunk')" "BLOCK" "force-push to trunk blocked"
 
 assert_eq "$(hook_decision 'git push origin main')" "ALLOW" "ordinary push to main allowed"
-assert_eq "$(hook_decision 'git push --force origin feat/foo')" "ALLOW" "force-push to feature branch allowed"
-assert_eq "$(hook_decision 'git push -f origin my-work')" "ALLOW" "force-push to non-main branch allowed"
+# Workers never need to force-push — sprint branches are isolated and pushes
+# happen via conductor/master, not worker. Block ALL force variants to close
+# the `git push -f` (no branch specified) bypass Codex flagged.
+assert_eq "$(hook_decision 'git push --force origin feat/foo')" "BLOCK" "force-push even to feature branch blocked"
+assert_eq "$(hook_decision 'git push -f origin my-work')" "BLOCK" "force-push -f blocked unconditionally"
+assert_eq "$(hook_decision 'git push -f')" "BLOCK" "bare git push -f blocked (was bypass: current branch could be main)"
+assert_eq "$(hook_decision 'git push --force-with-lease')" "BLOCK" "force-with-lease blocked"
+assert_eq "$(hook_decision 'git push origin +feat/foo')" "BLOCK" "force-push via + refspec blocked"
 
 # ── 7. Destructive SQL blocked ────────────────────────────────────────────
 
@@ -166,6 +176,46 @@ assert_eq "$CODE" "2" "block returns exit code 2"
 assert_contains "$OUTPUT" "BLOCKED" "block output mentions BLOCKED"
 assert_contains "$OUTPUT" "Command:" "block output includes the rejected command"
 assert_contains "$OUTPUT" "false positive" "block output hints at false-positive handling"
+
+# ── 9.5. Adversarial bypass attempts (Codex review findings) ────────────
+
+echo ""
+echo "9.5. Adversarial bypass regression tests"
+
+# First-word whitelist bypass — all must BLOCK after the whitelist removal.
+assert_eq "$(hook_decision 'echo ok; rm -rf /')" "BLOCK" "chaining: echo ok; rm -rf /"
+assert_eq "$(hook_decision 'cat README.md; rm -rf /Users')" "BLOCK" "chaining: cat; rm -rf /Users"
+assert_eq "$(hook_decision 'pwd && rm -rf /')" "BLOCK" "chaining via && and rm -rf /"
+assert_eq "$(hook_decision 'false || rm -rf /')" "BLOCK" "chaining via || and rm -rf /"
+assert_eq "$(hook_decision 'env rm -rf /')" "BLOCK" "wrapper exec: env rm -rf /"
+assert_eq "$(hook_decision '/usr/bin/env rm -rf /')" "BLOCK" "absolute-path wrapper: /usr/bin/env"
+assert_eq "$(hook_decision 'nice rm -rf /')" "BLOCK" "nice rm -rf /"
+# Inline interpreter wrapping — substring `rm -rf /` still matches. False
+# positives on literal strings are acceptable (rephrase the string).
+assert_eq "$(hook_decision 'python3 -c "import os; os.system(\"rm -rf /\")"')" "BLOCK" "python3 -c wrapping rm -rf /"
+assert_eq "$(hook_decision 'node -e "require(\"child_process\").execSync(\"rm -rf /\")"')" "BLOCK" "node -e wrapping rm -rf /"
+
+# rm flag/separator variants the old regex missed
+assert_eq "$(hook_decision 'rm -rf -- /')" "BLOCK" "rm -rf -- / (end-of-options marker)"
+assert_eq "$(hook_decision 'rm -rf --no-preserve-root /')" "BLOCK" "rm -rf --no-preserve-root /"
+assert_eq "$(hook_decision 'rm -rf /.')" "BLOCK" "rm -rf /. (dot trick)"
+assert_eq "$(hook_decision 'rm -rf /./')" "BLOCK" "rm -rf /./"
+assert_eq "$(hook_decision 'rm -rf /..')" "BLOCK" "rm -rf /.."
+assert_eq "$(hook_decision 'rm -rf /.*')" "BLOCK" "rm -rf /.* (dotglob catastrophe)"
+assert_eq "$(hook_decision 'rm --recursive --force /')" "BLOCK" "long-form --recursive --force /"
+assert_eq "$(hook_decision 'rm --force --recursive /')" "BLOCK" "long-form --force --recursive /"
+
+# Shutdown chaining
+assert_eq "$(hook_decision 'echo bye; shutdown -h now')" "BLOCK" "chained shutdown"
+assert_eq "$(hook_decision 'true && reboot')" "BLOCK" "chained reboot"
+
+# Redirect variants
+assert_eq "$(hook_decision 'cat x >> /dev/sda')" "BLOCK" "append >> to device"
+assert_eq "$(hook_decision 'echo bad >| /dev/sda')" "BLOCK" "clobber >| to device"
+assert_eq "$(hook_decision 'echo bad | tee /dev/sda')" "BLOCK" "tee to device"
+assert_eq "$(hook_decision 'cp payload /dev/sda')" "BLOCK" "cp to device"
+assert_eq "$(hook_decision 'dd if=x of=/dev/mapper/lv0')" "BLOCK" "dd to /dev/mapper/"
+assert_eq "$(hook_decision 'dd if=x of=/dev/vda')" "BLOCK" "dd to /dev/vda (virtio disk)"
 
 # ── 10. dispatch.py integration ──────────────────────────────────────────
 

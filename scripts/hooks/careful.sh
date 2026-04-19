@@ -10,6 +10,12 @@
 # Exit codes:
 #   0  — allow
 #   2  — block (stderr message goes back to Claude as tool error)
+#
+# NOTE: this hook does regex pattern matching on a shell-command string. It
+# cannot fully defeat a motivated attacker using shell obfuscation
+# (variable indirection, base64, eval, printf \x escape). The threat model
+# is "prevent accidents and honest-model mistakes," not "sandbox a
+# malicious agent." For real isolation, use worktrees + namespaces.
 set -euo pipefail
 
 # Read the hook input JSON from stdin
@@ -36,24 +42,6 @@ if [ -z "$CMD" ]; then
   exit 0
 fi
 
-# Commands whose first word is a read-only / display tool cannot do damage
-# even if their arguments mention dangerous strings. Allow unconditionally.
-FIRST_WORD=$(printf '%s' "$CMD" | awk '{print $1}' | sed 's|.*/||')
-case "$FIRST_WORD" in
-  echo|printf|grep|egrep|fgrep|rg|ag|find|sed|awk|cat|head|tail|less|more|bat|\
-  vi|vim|nano|emacs|code|view|file|stat|ls|ll|tree|wc|sort|uniq|diff|cmp|cksum|\
-  md5|md5sum|shasum|sha256sum|base64|hexdump|xxd|od|strings|type|which|whereis|\
-  pwd|env|printenv|date|git|node|python|python3|ruby|perl|go|cargo|npm|pnpm|yarn|\
-  make|pytest|jest|bundle|pip|pip3|uv|poetry|rustc|tsc|deno|bun)
-    # Still check these below for their own specific destructive patterns,
-    # but skip generic rm/dd/mkfs/shutdown/SQL checks by marking as "safe-first".
-    SAFE_FIRST=1
-    ;;
-  *)
-    SAFE_FIRST=0
-    ;;
-esac
-
 CMD_LOWER=$(printf '%s' "$CMD" | tr '[:upper:]' '[:lower:]')
 
 block() {
@@ -63,47 +51,40 @@ block() {
   exit 2
 }
 
-# Flexible flag regex fragment: matches "-rf", "-Rf", "-fr", etc., plus "--recursive"
-RM_RECURSIVE_FLAG='(-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)'
+# Matches -rf, -Rf, -fr, --recursive (with optional --force). Requires BOTH
+# recursive AND force semantics (so `rm -i` and `rm -r` alone don't trigger).
+RM_RECURSIVE_FLAG='(-[a-zA-Z]*[rR][a-zA-Z]*[fF][a-zA-Z]*|-[a-zA-Z]*[fF][a-zA-Z]*[rR][a-zA-Z]*|--recursive(\s+-[a-zA-Z]*[fF][a-zA-Z]*|\s+--force)|--force(\s+-[a-zA-Z]*[rR][a-zA-Z]*|\s+--recursive))'
+# Intermediate flags or `--` end-of-options marker between recursive flag and target.
+RM_FLAGS_OR_SEP='(\s+(-[^[:space:]]+|--))*'
 
-# ── Checks that run regardless of first word (shell-level hazards) ─────
+# ── Catastrophic checks — always run, no first-word shortcut ─────────────
+# Rationale: the first-word whitelist was a bypass surface
+# (echo ok; rm -rf /, env rm -rf /, python3 -c 'os.system("rm -rf /")'). We
+# run full destructive checks regardless of the leading command. The
+# narrower "SAFE_SQL" whitelist further below exists only to suppress the
+# SQL false-positive `grep DROP schema.sql`.
 
-# Redirect to raw block device — shell redirect, applies even for `cat`, `echo`
-if printf '%s' "$CMD_LOWER" | grep -qE '>\s*/dev/(sd[a-z]|nvme|disk[0-9]|hd[a-z]|rdisk)'; then
-  block "redirect to raw disk device"
-fi
-
-# git force-push to protected branches — applies even when first word is git
-if printf '%s' "$CMD" | grep -qE 'git\s+push\s+.*\b(main|master|trunk|release)\b'; then
-  if printf '%s' "$CMD" | grep -qE 'git\s+push\s+.*(-f\b|--force\b|--force-with-lease\b)'; then
-    block "git force-push to main/master/trunk/release branch"
-  fi
-fi
-
-# For search/view tools, skip all other destructive checks
-if [ "$SAFE_FIRST" = "1" ] && [ "$FIRST_WORD" != "git" ]; then
-  exit 0
-fi
-
-# ── Catastrophic: system-wipe patterns ──────────────────────────────────
-
-# rm -rf / or rm -rf /* or rm -rf /--no-preserve-root
-if printf '%s' "$CMD" | grep -qE "rm\s+${RM_RECURSIVE_FLAG}(\s+-[a-zA-Z]+)*\s+(/\s*$|/\s|/\*|/--no-preserve-root)"; then
+# rm -rf against filesystem root — covers: /, /*, /., /./, /.., /.* plus the
+# nasty `--no-preserve-root` flag which defeats the GNU rm safeguard.
+# Also catches `rm -rf -- /` (end-of-options marker) via RM_FLAGS_OR_SEP.
+# Trailing alternation enumerates every catastrophic ending after the /.
+CATASTROPHIC_ROOT_TAIL='(\s|$|\*|\.\*|\.\.?(\s|$|/))'
+if printf '%s' "$CMD" | grep -qE "rm\s+${RM_RECURSIVE_FLAG}${RM_FLAGS_OR_SEP}\s+/${CATASTROPHIC_ROOT_TAIL}"; then
   block "rm -rf against / (filesystem root)"
 fi
 
-# rm -rf $HOME or rm -rf ~
-if printf '%s' "$CMD" | grep -iqE "rm\s+${RM_RECURSIVE_FLAG}(\s+-[a-zA-Z]+)*\s+(\\\$home\b|~\/?(\s|$))"; then
+# rm -rf against $HOME or ~
+if printf '%s' "$CMD" | grep -iqE "rm\s+${RM_RECURSIVE_FLAG}${RM_FLAGS_OR_SEP}\s+(\\\$home\b|~\/?(\s|$))"; then
   block "rm -rf against \$HOME"
 fi
 
-# rm -rf /Users or /home (user directories)
-if printf '%s' "$CMD" | grep -iqE "rm\s+${RM_RECURSIVE_FLAG}(\s+-[a-zA-Z]+)*\s+(/users|/home)(/|\s|$)"; then
+# rm -rf against system user directories
+if printf '%s' "$CMD" | grep -iqE "rm\s+${RM_RECURSIVE_FLAG}${RM_FLAGS_OR_SEP}\s+(/users|/home)(/|\s|$)"; then
   block "rm -rf against system user directories"
 fi
 
 # dd writing to raw device
-if printf '%s' "$CMD_LOWER" | grep -qE 'dd\s+.*of=/dev/(sd[a-z]|nvme|disk|hd[a-z]|rdisk)'; then
+if printf '%s' "$CMD_LOWER" | grep -qE 'dd\s+.*of=/dev/(sd[a-z]|nvme|disk[0-9]|hd[a-z]|rdisk|vd[a-z]|mapper/)'; then
   block "dd to raw disk device"
 fi
 
@@ -117,24 +98,85 @@ if printf '%s' "$CMD" | grep -qE ':\(\)\s*\{\s*:\s*\|\s*:&?\s*\}\s*;?\s*:'; then
   block "fork bomb pattern"
 fi
 
-# Shutdown / reboot / halt
+# Redirect to raw block device — covers `>`, `>>`, `>|`, and also `tee` /
+# `cp` variants where no shell redirect syntax appears.
+if printf '%s' "$CMD_LOWER" | grep -qE '>{1,2}\|?\s*/dev/(sd[a-z]|nvme|disk[0-9]|hd[a-z]|rdisk|vd[a-z]|mapper/)'; then
+  block "redirect to raw disk device"
+fi
+if printf '%s' "$CMD_LOWER" | grep -qE '\btee\s+(-[a-z]+\s+)*/dev/(sd[a-z]|nvme|disk[0-9]|hd[a-z]|rdisk|vd[a-z]|mapper/)'; then
+  block "tee to raw disk device"
+fi
+if printf '%s' "$CMD_LOWER" | grep -qE '\bcp\s+.+\s+/dev/(sd[a-z]|nvme|disk[0-9]|hd[a-z]|rdisk|vd[a-z]|mapper/)'; then
+  block "cp to raw disk device"
+fi
+
+# Shutdown / reboot / halt — match anywhere, not only at start, so
+# `foo && shutdown` is caught even without a separator-splitter.
+if printf '%s' "$CMD_LOWER" | grep -qE '(^|[;&|]|\s&&\s|\s\|\|\s)\s*(sudo\s+)?(shutdown|reboot|halt|poweroff)(\s|$)'; then
+  block "system shutdown command"
+fi
+# Also catch "shutdown" as first word (belt-and-suspenders for leading whitespace)
 if printf '%s' "$CMD_LOWER" | grep -qE '^\s*(sudo\s+)?(shutdown|reboot|halt|poweroff)(\s|$)'; then
   block "system shutdown command"
 fi
 
+# ── Git force-push protection ───────────────────────────────────────────
+# Workers live on sprint branches and don't need to force-push anywhere.
+# Block ALL force push variants unconditionally. If a legitimate workflow
+# ever needs force-push to a non-protected branch, the operator can run
+# that command from outside the worker.
+if printf '%s' "$CMD" | grep -qE 'git\s+push\s+.*(-f\b|--force\b|--force-with-lease\b|-f\+|\+\s*[a-zA-Z])'; then
+  block "git force-push from worker (never allowed; push from outside the sprint if needed)"
+fi
+# Also catch pushing a refspec starting with `+` (force-push in refspec form)
+if printf '%s' "$CMD" | grep -qE 'git\s+push\s+[^-]\S*\s+\+[^[:space:]]+'; then
+  block "git push with + refspec (force-push in refspec form)"
+fi
+
 # ── Destructive SQL ─────────────────────────────────────────────────────
+# Skip SQL checks if the first word is a pure read-only / view tool. We
+# only protect against `psql`/`mysql`/`sqlite3`-style real execution paths
+# picking up these keywords as the command they send to the server.
+FIRST_WORD=$(printf '%s' "$CMD" | awk '{print $1}' | sed 's|.*/||')
+case "$FIRST_WORD" in
+  grep|egrep|fgrep|rg|ag|find|sed|awk|cat|head|tail|less|more|bat|\
+  view|file|stat|ls|tree|wc|sort|uniq|diff|cmp|\
+  md5|md5sum|shasum|sha256sum|base64|hexdump|xxd|od|strings)
+    SKIP_SQL=1
+    ;;
+  *)
+    SKIP_SQL=0
+    ;;
+esac
 
-if printf '%s' "$CMD_LOWER" | grep -qE '\bdrop\s+(table|database|schema)\b'; then
-  block "SQL DROP TABLE/DATABASE/SCHEMA"
+if [ "$SKIP_SQL" = "0" ]; then
+  if printf '%s' "$CMD_LOWER" | grep -qE '\bdrop\s+(table|database|schema)\b'; then
+    block "SQL DROP TABLE/DATABASE/SCHEMA"
+  fi
+  if printf '%s' "$CMD_LOWER" | grep -qE '\btruncate\s+table\b'; then
+    block "SQL TRUNCATE TABLE"
+  fi
 fi
 
-if printf '%s' "$CMD_LOWER" | grep -qE '\btruncate\s+table\b'; then
-  block "SQL TRUNCATE TABLE"
-fi
+# ── Interpreter-wrapper guard ──────────────────────────────────────────
+# If the first word is a language runtime that can `exec` a shell (python -c,
+# node -e, ruby -e, bash -c, etc.), the catastrophic-target regex above often
+# misses because the `rm -rf /"` has a quote after the slash, not whitespace.
+# Look for the substring `rm -rf` anywhere followed eventually by a catastrophic
+# root path (anchored loosely — false positives on literal strings are OK;
+# rephrase the literal). Only applies when the executor can actually run shell.
+case "$FIRST_WORD" in
+  python|python2|python3|ruby|perl|node|deno|bun|bash|sh|zsh|ksh|fish|dash|tclsh|awk|lua|Rscript)
+    if printf '%s' "$CMD" | grep -qE "rm\s+${RM_RECURSIVE_FLAG}[^;&|]*(/|/\*|/\.{1,2}(/|\"|'|$|\s)|\\\$HOME|\\\$\\{HOME\\}|~)"; then
+      block "interpreter wrapper contains rm against critical path (false positive on string literals — rephrase)"
+    fi
+    if printf '%s' "$CMD_LOWER" | grep -qE "dd\s+[^;&|]*of=/dev/(sd[a-z]|nvme|disk[0-9]|hd[a-z]|rdisk|vd[a-z]|mapper/)"; then
+      block "interpreter wrapper contains dd to raw device"
+    fi
+    if printf '%s' "$CMD_LOWER" | grep -qE "\\bmkfs(\\.[a-z0-9]+)?\\b"; then
+      block "interpreter wrapper contains mkfs"
+    fi
+    ;;
+esac
 
-# ── Safe exceptions: rm -rf of known build artifacts is allowed ─────────
-
-# If the command is rm -rf and all targets are in the safe list, allow it.
-# (This is for clarity in logs; non-safe targets fall through to the default
-# allow since we only block catastrophic paths above.)
 exit 0
