@@ -3,11 +3,21 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import re
+import shlex
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+# window_name becomes a filesystem path segment (`.autonomous/run-{window}.sh`,
+# `settings-{window}.json`) AND is interpolated into a generated shell wrapper.
+# Restrict to a safe character set so it cannot be used for path traversal
+# or shell injection. First char must be alphanumeric; body allows
+# alphanumerics, dot, dash, underscore; capped at 64 chars.
+_WINDOW_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
 
 def tmux_available() -> bool:
@@ -23,14 +33,47 @@ def tmux_available() -> bool:
     )
 
 
+def careful_settings_path(project_dir: Path, window: str) -> Path | None:
+    """Generate a per-session settings JSON registering the careful hook.
+    Returns the path when enabled (env var + hook script present), None otherwise."""
+    if os.environ.get("AUTONOMOUS_WORKER_CAREFUL", "").lower() not in {"1", "true", "yes"}:
+        return None
+    hook_script = Path(__file__).resolve().parent / "hooks" / "careful.sh"
+    if not hook_script.exists():
+        return None
+    settings_path = project_dir / ".autonomous" / f"settings-{window}.json"
+    settings_path.parent.mkdir(exist_ok=True)
+    settings = {
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": f"bash {hook_script}",
+                        }
+                    ],
+                }
+            ]
+        }
+    }
+    settings_path.write_text(json.dumps(settings, indent=2))
+    return settings_path
+
+
 def create_wrapper(project_dir: Path, prompt_file: Path, window: str) -> Path:
     wrapper = project_dir / ".autonomous" / f"run-{window}.sh"
     wrapper.parent.mkdir(exist_ok=True)
+    settings_file = careful_settings_path(project_dir, window)
+    # shlex.quote() produces properly-escaped single-quoted literals so the
+    # interpolated path can never break out of its argument context.
+    settings_arg = f" --settings {shlex.quote(str(settings_file))}" if settings_file else ""
     content = (
         "#!/bin/bash\n"
-        f"cd \"{project_dir}\"\n"
-        f"PROMPT=$(cat \"{prompt_file}\")\n"
-        "exec claude --dangerously-skip-permissions \"$PROMPT\"\n"
+        f"cd {shlex.quote(str(project_dir))}\n"
+        f"PROMPT=$(cat {shlex.quote(str(prompt_file))})\n"
+        f"exec claude --dangerously-skip-permissions{settings_arg} \"$PROMPT\"\n"
     )
     wrapper.write_text(content)
     wrapper.chmod(0o755)
@@ -43,6 +86,14 @@ def main(argv: list[str]) -> int:
     parser.add_argument("prompt_file")
     parser.add_argument("window_name")
     args = parser.parse_args(argv[1:])
+
+    if not _WINDOW_NAME_RE.match(args.window_name):
+        print(
+            f"ERROR: invalid window_name '{args.window_name}' "
+            "(must match [A-Za-z0-9][A-Za-z0-9_.-]{0,63})",
+            file=sys.stderr,
+        )
+        return 1
 
     project = Path(args.project_dir).resolve()
     prompt = Path(args.prompt_file).resolve()
