@@ -42,6 +42,7 @@ Conductor (SKILL.md, user's CC session)
 - `scripts/timeline.py` — Append-only JSONL session event log at `.autonomous/timeline.jsonl` (session-start, sprint-start, sprint-end, phase-transition, session-end)
 - `scripts/explore-scan.py` — Project scanner: scores 8 exploration dimensions via heuristics
 - `scripts/backlog.py` — Cross-session persistent backlog (progressive disclosure, mkdir locking, max 50 items)
+- `scripts/user-config.py` — Global + project config (mode toggles, template, persona scope). Precedence: env > project > global > defaults. Drives first-time AskUserQuestion setup; persists to `~/.claude/autonomous/config.json` or `<project>/.autonomous/config.json`.
 - `scripts/checkpoint.py` — Human-readable markdown snapshots of session state at `.autonomous/checkpoints/<ts>-<slug>.md` (save/list/latest/show)
 - `scripts/persona.py` — OWNER.md auto-generation from git history + project docs
 - `scripts/loop.py` — Standalone launcher (outside CC's skill system)
@@ -156,7 +157,7 @@ then set `{"template":"<name>"}` in `skill-config.json` (or the project override
 
 ## Testing
 
-650 tests across 12 suites, all pure bash:
+688 tests across 13 suites, all pure bash:
 
 ```bash
 bash tests/test_conductor.sh    # 99 tests: state management, phase transitions, exploration, stale cleanup, input validation, CLI help
@@ -171,6 +172,7 @@ bash tests/test_timeline.sh     # 63 tests: append-only JSONL log, filters, cond
 bash tests/test_careful_hook.sh # 97 tests: PreToolUse hook pattern matching, adversarial bypasses, dispatch integration, window_name validation
 bash tests/test_checkpoint.sh   # 70 tests: save/list/latest/show, path-traversal rejection, YAML injection resistance, type-unsafe JSON, non-UTF8
 bash tests/test_worktree.sh     # 65 tests: per-sprint worktree CRUD, symlink escape refusal, branch validation, registered-worktree guard, merge-sprint --keep-branch
+bash tests/test_user_config.sh  # 38 tests: config precedence (env > project > global > defaults), legacy migration, path validation, malformed config resilience
 python3 -m compileall scripts   # quick syntax check
 ```
 
@@ -199,6 +201,46 @@ When contributing to this project, follow these rules:
 - New scripts must have tests. New behavior in existing scripts must have test coverage.
 - Run `python3 -m compileall scripts` before committing Python changes
 - Run affected test suites before pushing
+
+### Sandbox verification (end-to-end, per PR)
+After unit tests pass, every PR that touches user-facing behavior gets an
+end-to-end sandbox run that exercises the full flow (fresh HOME, fresh git
+project, real subprocess invocations — not just stubs).
+
+**Delegate to a subagent, don't run sandbox scripts in the main session.**
+Rationale:
+- Sandbox output (raw command dumps, file listings, multi-step logs) pollutes
+  the main context window fast. A subagent isolates that noise.
+- Subagents can run a scenario matrix in parallel and report pass/fail only.
+- If the sandbox flags something, the main session still sees the summary + failure
+  details without drowning in everything that passed.
+
+Prompt shape (brief the subagent like a colleague — include branch, feature
+summary, precise scenarios, and what "pass" means per scenario):
+
+```
+You are a sandbox test runner for autonomous-skill at <path>. Branch <name>.
+Feature under test: <one paragraph>.
+
+Ensure you're on the branch, then run these scenarios:
+1. ...
+2. ...
+10. ...
+
+For each: print [PASS] or [FAIL] on one line with scenario number + brief reason.
+If FAIL, include the command output so we can diagnose.
+
+Safety:
+- Sandbox HOME (mktemp -d), sandbox git project (mktemp -d + git init) per scenario
+- Never write to the real ~/.claude/<anything>
+- Kill any stray claude processes you spawned
+
+Final line: SUMMARY: N/M passed.
+```
+
+Scope rule: any PR touching `scripts/`, `autonomous/SKILL.md`, `quickdo/SKILL.md`,
+or worker dispatch should add a sandbox run to its test plan. Pure doc/test
+changes can skip this.
 
 ### Commit messages
 - Conventional commits: `feat:`, `fix:`, `refactor:`, `docs:`, `chore:`, `perf:`

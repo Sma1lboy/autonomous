@@ -5,11 +5,17 @@ All notable changes to autonomous-skill are documented here.
 ## [Unreleased]
 
 ### Added
-- `scripts/worktree.py` — per-sprint git worktree manager. Creates `.worktrees/sprint-N/` on a dedicated sprint branch, symlinks `.autonomous/` back to the main tree so coordination files stay single-sourced. Commands: `create`, `remove`, `list`, `ensure-gitignore`, `prune`, `path`. Refuses symlinked `.worktrees/` or `.autonomous/` to prevent repo escape; validates branch names via `git check-ref-format`; requires `is_git_repo` before remove.
+- `scripts/user-config.py` — global + project config, replaces scattered env vars as the source of truth for mode toggles. Commands: `check`, `get`, `set`, `setup`, `show`, `paths`. Precedence: env > `<project>/.autonomous/config.json` > `~/.claude/autonomous/config.json` > defaults. Reads legacy `.autonomous/skill-config.json` for back-compat.
+- First-time setup in `autonomous/SKILL.md` — when no global config exists, asks once via `AskUserQuestion` for `worktrees`, `careful_hook`, and `scope` (global/project), persists, never asks again.
+- `tests/test_user_config.sh` — 38 tests covering precedence, env overrides, legacy migration, validation, malformed-config resilience.
+- `scripts/worktree.py` — per-sprint git worktree manager (opt-in via `mode.worktrees`). Creates `.worktrees/sprint-N/` on a dedicated sprint branch, symlinks `.autonomous/` back to the main tree so coordination files stay single-sourced. Commands: `create`, `remove`, `list`, `ensure-gitignore`, `prune`, `path`. Refuses symlinked `.worktrees/` or `.autonomous/` to prevent repo escape; validates branch names via `git check-ref-format`; requires `is_git_repo` before remove.
 - `tests/test_worktree.sh` — 65 tests covering CRUD, validation, symlink escape refusal, unregistered-directory remove guard, branch name validation, `.autonomous` symlink write-through, and multi-sprint coexistence.
 
 ### Changed
-- `autonomous/SKILL.md` Dispatch phase — when `AUTONOMOUS_SPRINT_WORKTREES=1` is set, each sprint runs in its own worktree instead of flipping the main tree onto the sprint branch. Default remains OFF (opt-in). Merge runs first (with `--keep-branch`), then worktree removal, then branch delete — if merge conflicts, worktree and branch are preserved for forensics.
+- `scripts/persona.py` — OWNER.md now lives at `~/.claude/autonomous/OWNER.md` (global) by default. Legacy `~/.claude/skills/autonomous-skill/OWNER.md` is migrated on first run. When `persona.scope=project` is set in config, OWNER.md goes to `<project>/.autonomous/OWNER.md` instead.
+- `scripts/dispatch.py` — careful-hook toggle now sourced from user-config (`mode.careful_hook`). `AUTONOMOUS_WORKER_CAREFUL` env var still overrides for debugging.
+- `scripts/build-sprint-prompt.py` — template resolution chain: project `config.json` → project `skill-config.json` (legacy) → global `config.json` → skill-root `skill-config.json` → default.
+- `autonomous/SKILL.md` Dispatch phase — when `mode.worktrees=true` (or `AUTONOMOUS_SPRINT_WORKTREES=1`), each sprint runs in its own worktree instead of flipping the main tree onto the sprint branch. Merge runs first (with `--keep-branch`), then worktree removal, then branch delete — if merge conflicts, worktree and branch are preserved for forensics.
 - `scripts/merge-sprint.py` — adds `--keep-branch` flag (skip final `git branch -D`, worktree mode deletes the branch separately after worktree removal). Merge failures now return 1 with the merge aborted cleanly instead of raising.
 
 ## [0.6.0] — 2026-04-09

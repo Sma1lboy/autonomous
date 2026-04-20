@@ -17,6 +17,8 @@ if [ ! -d "$SCRIPT_DIR/scripts" ]; then
 fi
 _UPD=$(bash "$SCRIPT_DIR/scripts/update-check.sh" 2>/dev/null || true)
 [ -n "$_UPD" ] && echo "$_UPD" || true
+CONFIG_STATUS=$(python3 "$SCRIPT_DIR/scripts/user-config.py" check "$(pwd)" 2>/dev/null || echo "needs-setup")
+echo "CONFIG_STATUS=$CONFIG_STATUS"
 python3 "$SCRIPT_DIR/scripts/persona.py" "$(pwd)" >/dev/null 2>&1
 python3 "$SCRIPT_DIR/scripts/startup.py" "$(pwd)"
 ```
@@ -27,6 +29,37 @@ If the startup block outputs `UPDATE_AVAILABLE <old> <new>`, tell the user:
 > Update with: `cd ~/.claude/skills/autonomous-skill && git pull`
 
 Then continue normally — don't block on the update.
+
+**If `CONFIG_STATUS=needs-setup`, run the First-Time Setup (below) BEFORE Discovery.**
+If `CONFIG_STATUS=configured`, skip setup silently.
+
+## First-Time Setup — Only Runs Once Per User
+
+This fires when no global config exists at `~/.claude/autonomous/config.json`.
+Ask the user three things with a single `AskUserQuestion` call (multi-question):
+
+1. **Worktree mode**: "Run each sprint in its own git worktree (file-level isolation between sprints)? Recommended: yes."
+   - A) Yes — enable worktree mode
+   - B) No — legacy inline `git checkout -b` mode
+2. **Careful hook**: "Install a safety hook that blocks catastrophic Bash commands (`rm -rf /`, `mkfs`, force-push to main, etc.) in dispatched workers? Recommended: yes."
+   - A) Yes — enable careful hook
+   - B) No
+3. **Scope**: "Save these settings globally (apply to every project) or just this project?"
+   - A) Global (recommended — `~/.claude/autonomous/config.json`)
+   - B) Project (only this repo — `.autonomous/config.json`)
+
+Persist the answers. Map A/B → on/off; map scope → `--scope global` or `--scope project --project $(pwd)`:
+
+```bash
+python3 "$SCRIPT_DIR/scripts/user-config.py" setup \
+  --scope "$_SCOPE" ${_SCOPE_PROJECT:-} \
+  --worktrees "$_WORKTREES" \
+  --careful "$_CAREFUL"
+```
+
+After setup, tell the user in one line what was saved (path + toggles), then continue to
+Discovery. The env vars `AUTONOMOUS_SPRINT_WORKTREES` / `AUTONOMOUS_WORKER_CAREFUL` still
+override config at invocation time (debugging escape hatch).
 
 ## Pre-flight
 
@@ -41,9 +74,11 @@ ask unnecessary questions, do NOT explain what you're about to do. Act.
 
 1. Run the Startup bash block above
 2. Run the Pre-flight bash block (parse args)
-3. If direction was given in args → say one sentence confirming it, then jump to Session
-4. If no direction → ask the user ONE question: "What should we work on?"
-5. Once you have a direction → jump to Session and start dispatching
+3. If `CONFIG_STATUS=needs-setup` from Startup → run the First-Time Setup
+   section (one `AskUserQuestion` with 3 questions, persist via `user-config.py setup`). Otherwise skip.
+4. If direction was given in args → say one sentence confirming it, then jump to Session
+5. If no direction → ask the user ONE question: "What should we work on?"
+6. Once you have a direction → jump to Session and start dispatching
 
 **Common mistake**: Reading all the instructions below and getting paralyzed.
 Don't. The instructions are reference material. Your job right now is:
@@ -181,11 +216,10 @@ python3 "$SCRIPT_DIR/scripts/conductor-state.py" sprint-start "$(pwd)" "$SPRINT_
 SPRINT_NUM=$(python3 -c "import json; d=json.load(open('.autonomous/conductor-state.json')); print(len(d['sprints']))")
 SPRINT_BRANCH="${SESSION_BRANCH}-sprint-${SPRINT_NUM}"
 
-# Two modes — worktree-per-sprint (opt-in) or inline branch switching (default).
-# Worktree mode keeps the main tree on the session branch and runs each sprint
-# in its own .worktrees/sprint-N/ directory, giving file-level isolation
-# between consecutive sprints. Enable with AUTONOMOUS_SPRINT_WORKTREES=1.
-if [ "${AUTONOMOUS_SPRINT_WORKTREES:-0}" = "1" ]; then
+# Worktree-vs-inline mode sourced from user-config (env var still overrides).
+# Env: AUTONOMOUS_SPRINT_WORKTREES=1 forces on; AUTONOMOUS_SPRINT_WORKTREES=0 forces off.
+WORKTREE_MODE=$(python3 "$SCRIPT_DIR/scripts/user-config.py" get mode.worktrees "$(pwd)" 2>/dev/null || echo "false")
+if [ "$WORKTREE_MODE" = "true" ]; then
   python3 "$SCRIPT_DIR/scripts/worktree.py" ensure-gitignore "$(pwd)" >/dev/null || true
   SPRINT_DIR=$(python3 "$SCRIPT_DIR/scripts/worktree.py" create "$(pwd)" "$SPRINT_NUM" "$SPRINT_BRANCH")
 else
@@ -228,7 +262,7 @@ conflicts — the worktree stays for inspection instead of being wiped before
 we know whether the merge succeeded.
 
 ```bash
-if [ "${AUTONOMOUS_SPRINT_WORKTREES:-0}" = "1" ]; then
+if [ "$WORKTREE_MODE" = "true" ]; then
   if python3 "$SCRIPT_DIR/scripts/merge-sprint.py" --keep-branch \
        "$SESSION_BRANCH" "$SPRINT_BRANCH" "$SPRINT_NUM" "$STATUS" "$SUMMARY"; then
     python3 "$SCRIPT_DIR/scripts/worktree.py" remove "$(pwd)" "$SPRINT_NUM" || true
