@@ -2,7 +2,7 @@
 
 ![logo](assets/logo.svg)
 
-# autonomous-skill
+# autonomous
 
 > *"You sleep. It ships."*
 
@@ -17,7 +17,7 @@ You close your laptop at midnight. 47 TODOs in your backlog.<br>
 You open it at 8am. 38 of them are done, tested, committed, on a clean branch.<br>
 Total cost: $4.20. No meetings required.<br>
 
-**That's autonomous-skill.**
+**That's autonomous.**
 
 A self-driving project agent for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 Drop it into any git repo, run `/autonomous`, go to sleep.
@@ -37,7 +37,7 @@ Optional: [tmux](https://github.com/tmux/tmux) (visible worker windows), [jq](ht
 Paste this into Claude Code:
 
 ```
-Install autonomous-skill: git clone https://github.com/Sma1lboy/autonomous-skill.git ~/.claude/skills/autonomous-skill && cd ~/.claude/skills/autonomous-skill && ./setup
+Install autonomous: git clone https://github.com/Sma1lboy/autonomous.git ~/.claude/skills/autonomous-skill && cd ~/.claude/skills/autonomous-skill && ./setup
 ```
 
 That's it. Open any git repo and run `/autonomous` or `/quickdo`.
