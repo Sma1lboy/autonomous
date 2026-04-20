@@ -42,6 +42,7 @@ Conductor (SKILL.md, user's CC session)
 - `scripts/timeline.py` — Append-only JSONL session event log at `.autonomous/timeline.jsonl` (session-start, sprint-start, sprint-end, phase-transition, session-end)
 - `scripts/explore-scan.py` — Project scanner: scores 8 exploration dimensions via heuristics
 - `scripts/backlog.py` — Cross-session persistent backlog (progressive disclosure, mkdir locking, max 50 items)
+- `scripts/user-config.py` — Global + project config (mode toggles, template, persona scope). Precedence: env > project > global > defaults. Drives first-time AskUserQuestion setup; persists to `~/.claude/autonomous/config.json` or `<project>/.autonomous/config.json`.
 - `scripts/checkpoint.py` — Human-readable markdown snapshots of session state at `.autonomous/checkpoints/<ts>-<slug>.md` (save/list/latest/show)
 - `scripts/persona.py` — OWNER.md auto-generation from git history + project docs
 - `scripts/loop.py` — Standalone launcher (outside CC's skill system)
@@ -156,7 +157,7 @@ then set `{"template":"<name>"}` in `skill-config.json` (or the project override
 
 ## Testing
 
-650 tests across 12 suites, all pure bash:
+688 tests across 13 suites, all pure bash:
 
 ```bash
 bash tests/test_conductor.sh    # 99 tests: state management, phase transitions, exploration, stale cleanup, input validation, CLI help
@@ -171,6 +172,7 @@ bash tests/test_timeline.sh     # 63 tests: append-only JSONL log, filters, cond
 bash tests/test_careful_hook.sh # 97 tests: PreToolUse hook pattern matching, adversarial bypasses, dispatch integration, window_name validation
 bash tests/test_checkpoint.sh   # 70 tests: save/list/latest/show, path-traversal rejection, YAML injection resistance, type-unsafe JSON, non-UTF8
 bash tests/test_worktree.sh     # 65 tests: per-sprint worktree CRUD, symlink escape refusal, branch validation, registered-worktree guard, merge-sprint --keep-branch
+bash tests/test_user_config.sh  # 38 tests: config precedence (env > project > global > defaults), legacy migration, path validation, malformed config resilience
 python3 -m compileall scripts   # quick syntax check
 ```
 

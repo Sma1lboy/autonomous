@@ -33,10 +33,32 @@ def tmux_available() -> bool:
     )
 
 
+def _careful_enabled(project_dir: Path) -> bool:
+    """Honor env var first (debug override), fall through to user-config."""
+    env_raw = os.environ.get("AUTONOMOUS_WORKER_CAREFUL", "")
+    if env_raw:
+        return env_raw.lower() in {"1", "true", "yes", "on"}
+    config_script = Path(__file__).resolve().parent / "user-config.py"
+    if not config_script.exists():
+        return False
+    try:
+        result = subprocess.run(
+            [sys.executable, str(config_script), "get",
+             "mode.careful_hook", str(project_dir)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return result.stdout.strip() == "true"
+
+
 def careful_settings_path(project_dir: Path, window: str) -> Path | None:
     """Generate a per-session settings JSON registering the careful hook.
-    Returns the path when enabled (env var + hook script present), None otherwise."""
-    if os.environ.get("AUTONOMOUS_WORKER_CAREFUL", "").lower() not in {"1", "true", "yes"}:
+    Returns the path when enabled (via user-config or env var), None otherwise."""
+    if not _careful_enabled(project_dir):
         return None
     hook_script = Path(__file__).resolve().parent / "hooks" / "careful.sh"
     if not hook_script.exists():

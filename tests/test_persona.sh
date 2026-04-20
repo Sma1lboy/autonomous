@@ -2,8 +2,8 @@
 # Tests for scripts/persona.py
 # Uses tests/claude mock binary — no real API calls.
 #
-# OWNER.md is now GLOBAL (lives in skill root dir, not per-project).
-# Tests back up and restore the real OWNER.md to avoid side effects.
+# OWNER.md is now GLOBAL at ~/.claude/autonomous/OWNER.md (via user-config).
+# Tests sandbox HOME to a tmpdir so the real user config isn't touched.
 
 set -euo pipefail
 
@@ -11,24 +11,30 @@ source "$(dirname "${BASH_SOURCE[0]}")/test_helpers.sh"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PERSONA_SH="$REPO_ROOT/scripts/persona.py"
-GLOBAL_OWNER="$REPO_ROOT/OWNER.md"
+
+# Sandbox HOME so ~/.claude/autonomous/OWNER.md goes to a tmpdir.
+TEST_HOME=$(mktemp -d)
+export HOME="$TEST_HOME"
+GLOBAL_OWNER="$TEST_HOME/.claude/autonomous/OWNER.md"
 
 # Intercept 'claude' with mock before real binary
 export PATH="$REPO_ROOT/tests:$PATH"
 
-# Back up existing global OWNER.md (restore at end)
-OWNER_BACKUP=""
-if [ -f "$GLOBAL_OWNER" ]; then
-  OWNER_BACKUP=$(mktemp)
-  cp "$GLOBAL_OWNER" "$OWNER_BACKUP"
+# Temporarily hide the skill-root legacy OWNER.md so persona.py's back-compat
+# migration doesn't copy it into our sandbox (which would mask generation).
+LEGACY_OWNER="$REPO_ROOT/OWNER.md"
+LEGACY_BACKUP=""
+if [ -f "$LEGACY_OWNER" ]; then
+  LEGACY_BACKUP=$(mktemp)
+  mv "$LEGACY_OWNER" "$LEGACY_BACKUP"
 fi
 
-# Extend existing cleanup trap from test_helpers.sh
+# Clean up tmp HOME + restore legacy OWNER.md on exit
 _orig_cleanup=$(trap -p EXIT | sed "s/trap -- '//;s/' EXIT//")
 restore_and_cleanup() {
-  if [ -n "$OWNER_BACKUP" ] && [ -f "$OWNER_BACKUP" ]; then
-    cp "$OWNER_BACKUP" "$GLOBAL_OWNER"
-    rm -f "$OWNER_BACKUP"
+  rm -rf "$TEST_HOME"
+  if [ -n "$LEGACY_BACKUP" ] && [ -f "$LEGACY_BACKUP" ]; then
+    mv "$LEGACY_BACKUP" "$LEGACY_OWNER"
   fi
   eval "$_orig_cleanup"
 }
@@ -38,6 +44,11 @@ trap restore_and_cleanup EXIT
 remove_global_owner() {
   rm -f "$GLOBAL_OWNER"
 }
+
+# The global OWNER.md now lives under HOME, not the repo. Make sure the parent
+# dir exists before tests that write directly to $GLOBAL_OWNER (persona.py
+# creates it itself via mkdir(parents=True, exist_ok=True)).
+mkdir -p "$(dirname "$GLOBAL_OWNER")"
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 echo ""

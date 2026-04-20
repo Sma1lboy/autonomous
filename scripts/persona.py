@@ -109,12 +109,42 @@ def main(argv: list[str]) -> int:
 
     project = Path(args.project_dir).resolve()
     script_dir = Path(__file__).resolve().parent
-    owner_file = script_dir.parent / "OWNER.md"
     template_file = script_dir.parent / "OWNER.md.template"
+
+    # Resolve OWNER.md location via user-config:
+    #   - persona.scope=project → <project>/.autonomous/OWNER.md
+    #   - persona.scope=global (default) → ~/.claude/autonomous/OWNER.md
+    # Fall through to legacy skill-root OWNER.md for back-compat so users who
+    # already have one don't lose it on upgrade.
+    sys.path.insert(0, str(script_dir))
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "user_config", script_dir / "user-config.py"
+        )
+        uc_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(uc_module)  # type: ignore[union-attr]
+        cfg = uc_module.load_effective(project)
+        scope = cfg.get("persona", {}).get("scope", "global")
+        if scope == "project":
+            owner_file = project / ".autonomous" / "OWNER.md"
+        else:
+            owner_file = uc_module.global_owner_path()
+        legacy_owner = script_dir.parent / "OWNER.md"
+    except Exception:  # pragma: no cover — user-config must never break persona
+        owner_file = script_dir.parent / "OWNER.md"
+        legacy_owner = owner_file
+
+    # Migrate: if the new location is empty but the legacy one has content,
+    # copy it rather than regenerate from scratch.
+    if not owner_file.exists() and legacy_owner != owner_file and legacy_owner.exists():
+        owner_file.parent.mkdir(parents=True, exist_ok=True)
+        owner_file.write_text(legacy_owner.read_text(encoding="utf-8"), encoding="utf-8")
 
     if owner_file.exists():
         print(owner_file)
         return 0
+    owner_file.parent.mkdir(parents=True, exist_ok=True)
 
     git_log, claude_md, readme = gather_context(project)
     if not any([git_log, claude_md, readme]):
