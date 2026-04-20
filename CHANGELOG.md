@@ -2,6 +2,17 @@
 
 All notable changes to autonomous-skill are documented here.
 
+## [Unreleased]
+
+### Added
+- `scripts/timeline.py` — append-only JSONL event log at `.autonomous/timeline.jsonl`. Records session-start / sprint-start / sprint-end / phase-transition / session-end events across all sessions in a project. Enables post-hoc inspection and future analytics.
+- Commands: `emit`, `tail`, `list --session X --event Y`, `sessions`.
+- `tests/test_timeline.sh` — 55 tests covering emit, filters, malformed-line resilience, conductor integration, phase-transition emission.
+
+### Changed
+- `conductor-state.py` emits timeline events on `init` (session-start), `sprint-start`, and `sprint-end` (plus `phase-transition` on phase change). Failures are swallowed so a broken timeline never breaks the conductor.
+- `autonomous/SKILL.md` Session Wrap-up emits `session-end` with total_sprints / total_commits.
+
 ## [0.6.0] — 2026-04-09
 
 ### Added

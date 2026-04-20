@@ -36,7 +36,8 @@ Conductor (SKILL.md, user's CC session)
 - `scripts/evaluate-sprint.py` — Read summary JSON, update conductor state
 - `scripts/merge-sprint.py` — Merge or discard sprint branch
 - `scripts/write-summary.py` — Generate sprint-summary.json
-- `scripts/conductor-state.py` — Conductor state management (atomic writes, PID lock, phase transitions)
+- `scripts/conductor-state.py` — Conductor state management (atomic writes, PID lock, phase transitions; emits timeline events)
+- `scripts/timeline.py` — Append-only JSONL session event log at `.autonomous/timeline.jsonl` (session-start, sprint-start, sprint-end, phase-transition, session-end)
 - `scripts/explore-scan.py` — Project scanner: scores 8 exploration dimensions via heuristics
 - `scripts/backlog.py` — Cross-session persistent backlog (progressive disclosure, mkdir locking, max 50 items)
 - `scripts/persona.py` — OWNER.md auto-generation from git history + project docs
@@ -152,7 +153,7 @@ then set `{"template":"<name>"}` in `skill-config.json` (or the project override
 
 ## Testing
 
-329 tests across 7 suites, all pure bash:
+410 tests across 9 suites, all pure bash:
 
 ```bash
 bash tests/test_conductor.sh    # 99 tests: state management, phase transitions, exploration, stale cleanup, input validation, CLI help
@@ -163,6 +164,7 @@ bash tests/test_loop.sh         # 20 tests: standalone launcher args, env vars, 
 bash tests/test_backlog.sh      # 76 tests: CRUD, progressive disclosure, pick, prune, overflow, concurrency, validation
 bash tests/test_build_sprint_prompt.sh  # 25 tests: template resolution, allow/block injection, fallback, path-traversal guard
 bash tests/test_eval_output.sh  # 35 tests: eval-safe output, shell quoting, tmux cleanup
+bash tests/test_timeline.sh     # 55 tests: append-only JSONL log, filters, conductor integration, phase-transition emission
 python3 -m compileall scripts   # quick syntax check
 ```
 

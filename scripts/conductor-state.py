@@ -10,6 +10,23 @@ from pathlib import Path
 from textwrap import dedent
 from typing import Any, NoReturn
 
+# Allow sibling import of timeline.py for event emission.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    import timeline as _timeline  # type: ignore[import-not-found]
+except Exception:  # pragma: no cover — timeline is optional; never break conductor
+    _timeline = None
+
+
+def _emit(project: Path, event: str, **fields: Any) -> None:
+    """Emit a timeline event, swallowing any error."""
+    if _timeline is None:
+        return
+    try:
+        _timeline.emit(project, event, **fields)
+    except Exception:
+        pass
+
 
 class StateManager:
     def __init__(self, project_dir: Path) -> None:
@@ -157,6 +174,13 @@ def cmd_init(manager: StateManager, args: list[str]) -> None:
         },
     }
     manager.write_state(state)
+    _emit(
+        manager.project,
+        "session-start",
+        session_id=session_id,
+        mission=mission,
+        max_sprints=ms_int,
+    )
     print(session_id)
 
 
@@ -181,6 +205,13 @@ def cmd_sprint_start(manager: StateManager, args: list[str]) -> None:
         }
     )
     manager.write_state(state)
+    _emit(
+        manager.project,
+        "sprint-start",
+        sprint=sprint_num,
+        direction=direction,
+        phase=state.get("phase", "directed"),
+    )
     print(sprint_num)
 
 
@@ -199,6 +230,7 @@ def cmd_sprint_end(manager: StateManager, args: list[str]) -> None:
     except json.JSONDecodeError:
         commits = []
     direction_done = direction_complete.lower() == "true"
+    prev_phase = state.get("phase", "directed")
 
     sprints = state.get("sprints", [])
     if not sprints:
@@ -243,7 +275,28 @@ def cmd_sprint_end(manager: StateManager, args: list[str]) -> None:
             state["phase_transition_reason"] = "consecutive_zero_commits"
 
     manager.write_state(state)
-    print(state.get("phase", "directed"))
+    new_phase = state.get("phase", "directed")
+
+    sprint_num_emit = len(sprints)
+    _emit(
+        manager.project,
+        "sprint-end",
+        sprint=sprint_num_emit,
+        status=status,
+        commits=len(commits),
+        direction_complete=direction_done,
+        phase=new_phase,
+    )
+    if new_phase != prev_phase:
+        _emit(
+            manager.project,
+            "phase-transition",
+            sprint=sprint_num_emit,
+            **{"from": prev_phase, "to": new_phase},
+            reason=state.get("phase_transition_reason", ""),
+        )
+
+    print(new_phase)
 
 
 def cmd_phase(manager: StateManager) -> None:
