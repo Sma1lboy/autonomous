@@ -20,12 +20,17 @@ When an issue is assigned to you (`@copilot`):
    comments on the PR must have every thread resolved — either fix the
    issue and reply with the commit SHA, or reply explaining why you're
    not acting on it. Never silently close a thread.
-6. **Never stop in draft.** Only after two clean rescans *and* all
-   review threads resolved mark the PR **ready for review**. A draft
-   PR is not a finished PR — the issue author has no signal that
-   you're done. If some dimensions are stuck below 9 after repeated
-   attempts, still mark ready but document the blocker in **Validation
-   gaps**.
+6. **Never stop in draft.** Marking ready is a concrete action, not
+   an attitude. Your **last tool call** in this workflow must be:
+   ```bash
+   gh pr ready "$PR_NUMBER"
+   ```
+   Words like "I've marked the PR ready" are narrative, not action —
+   if you didn't actually run `gh pr ready`, the PR is still draft
+   and the workflow has failed. Before running it, confirm two clean
+   rescans *and* all review threads resolved. If some dimensions are
+   stuck below 9 after repeated attempts, still run `gh pr ready`
+   but document the blocker in **Validation gaps**.
 7. **Document what you could not verify.** You run on a Linux runner
    and cannot observe the author's local OS, production traffic, or
    real data shape. Call out validation gaps in the PR description

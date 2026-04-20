@@ -256,9 +256,32 @@ A reviewer should be able to trace the trajectory: which dimensions
 moved, which were rescored up or down between passes, and why.
 ```
 
-Then **mark the PR ready for review**. A draft PR is not a finished PR.
-If you stop in draft, the workflow has failed — the issue author has no
-signal that you're done.
+### Ship it — literal final action
+
+Marking the PR ready is a **concrete action**, not an attitude. Your
+last tool call in this workflow must be the shell command:
+
+```bash
+gh pr ready "$PR_NUMBER"
+```
+
+where `$PR_NUMBER` is this PR's number (available from the issue/PR
+context you started with, or `gh pr view --json number --jq .number`).
+
+Do **not** use words like "I've marked the PR ready" or "the PR is now
+ready" — those are narrative, not action. If you did not invoke
+`gh pr ready`, the PR is still draft and the workflow has failed.
+
+**Self-check before your session ends:**
+
+- [ ] PR description includes the Scoreboard, Files modified, Test
+  results, Validation gaps, Stop reason, and Passes sections defined
+  above (format matters — a prose summary is not a substitute)
+- [ ] `gh pr view --json isDraft --jq .isDraft` returns `false`
+- [ ] All automated reviewer threads resolved (see Automated reviewer
+  gate above)
+
+If any checkbox fails, you are not done. Loop back.
 
 ---
 
