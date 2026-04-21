@@ -126,11 +126,6 @@ def project_owner_path(project: Path) -> Path:
     return project / ".autonomous" / "OWNER.md"
 
 
-def legacy_skill_config_path(project: Path) -> Path:
-    """Old per-project template selector (pre-user-config)."""
-    return project / ".autonomous" / "skill-config.json"
-
-
 def _load_json(path: Path) -> dict[str, Any]:
     """Return a dict or {} — never raises, never returns non-dict."""
     if not path.exists():
@@ -196,15 +191,7 @@ def load_effective(project: Path | None) -> dict[str, Any]:
     merged = json.loads(json.dumps(DEFAULTS))  # deep copy
     merged = _deep_merge(merged, _load_json(global_config_path()))
     if project is not None:
-        # Backward compat: pull template out of legacy skill-config.json if the
-        # new config.json doesn't exist in the project.
-        project_cfg_path = project_config_path(project)
-        if not project_cfg_path.exists():
-            legacy = _load_json(legacy_skill_config_path(project))
-            if legacy.get("template"):
-                merged["mode"]["template"] = legacy["template"]
-        else:
-            merged = _deep_merge(merged, _load_json(project_cfg_path))
+        merged = _deep_merge(merged, _load_json(project_config_path(project)))
     return merged
 
 
@@ -459,7 +446,6 @@ def cmd_paths(args: argparse.Namespace) -> None:
         print(f"project_dir:     {project}")
         print(f"project_config:  {project_config_path(project)}")
         print(f"project_owner:   {project_owner_path(project)}")
-        print(f"legacy_config:   {legacy_skill_config_path(project)}")
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -11,43 +11,23 @@ from pathlib import Path
 
 
 def read_template_name(project_dir: Path, script_dir: Path) -> str:
-    """Template resolution order (first match wins):
-    1. `<project>/.autonomous/config.json` (new, via user-config.py)
-    2. `<project>/.autonomous/skill-config.json` (legacy, pre-user-config)
-    3. `~/.claude/autonomous/config.json` (new global)
-    4. `<skill_dir>/skill-config.json` (shipped default)
-    5. "default"
-    Names containing `/` or starting with `.` are rejected (path traversal)."""
-    def load_json(path: Path) -> dict:
-        if not path.exists():
-            return {}
-        try:
-            data = json.loads(path.read_text())
-        except (json.JSONDecodeError, OSError):
-            return {}
-        return data if isinstance(data, dict) else {}
-
-    def extract(data: dict, key_path: list[str]) -> str | None:
-        cur = data
-        for k in key_path:
-            if not isinstance(cur, dict):
-                return None
-            cur = cur.get(k)
-        return cur if isinstance(cur, str) and cur else None
-
-    candidates = [
-        extract(load_json(project_dir / ".autonomous" / "config.json"), ["mode", "template"]),
-        extract(load_json(project_dir / ".autonomous" / "skill-config.json"), ["template"]),
-        extract(
-            load_json(Path.home() / ".claude" / "autonomous" / "config.json"),
-            ["mode", "template"],
-        ),
-        extract(load_json(script_dir / "skill-config.json"), ["template"]),
-    ]
-    name = next((c for c in candidates if c), "default")
-    if "/" in name or name.startswith("."):
+    user_config = script_dir / "scripts" / "user-config.py"
+    if not user_config.exists():
         return "default"
-    return name
+    try:
+        result = subprocess.run(
+            [sys.executable, str(user_config), "get", "mode.template", str(project_dir)],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        )
+        name = result.stdout.strip()
+        if not name or "/" in name or name.startswith("."):
+            return "default"
+        return name
+    except Exception:
+        return "default"
 
 
 def extract_section(body: str, header: str) -> str:
