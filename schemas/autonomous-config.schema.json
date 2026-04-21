@@ -30,10 +30,11 @@
           "default": false,
           "description": "When true, dispatched workers get a PreToolUse hook (scripts/hooks/careful.sh) that blocks catastrophic Bash commands (rm -rf /, mkfs, force-push to main, DROP TABLE, etc.). Env override: AUTONOMOUS_WORKER_CAREFUL."
         },
-        "template": {
-          "type": "string",
-          "default": "gstack",
-          "description": "Worker-task template name. Ships with 'gstack' (uses /office-hours, /qa, /investigate, blocks /ship) and 'default' (generic). Custom templates live at templates/<name>/template.md."
+        "templates": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["gstack"],
+          "description": "Worker-task template name. Ships with 'gstack' and 'default' (generic). Active templates are composed at runtime."
         }
       }
     },

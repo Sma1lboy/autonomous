@@ -10,40 +10,30 @@ import sys
 from pathlib import Path
 
 
-def read_template_name(project_dir: Path, script_dir: Path) -> str:
+def read_template_names(project_dir: Path, script_dir: Path) -> list[str]:
     user_config = script_dir / "scripts" / "user-config.py"
     if not user_config.exists():
-        return "default"
+        return ["default"]
     try:
         result = subprocess.run(
-            [sys.executable, str(user_config), "get", "mode.template", str(project_dir)],
+            [sys.executable, str(user_config), "get", "mode.templates", str(project_dir)],
             capture_output=True,
             text=True,
             check=True,
             timeout=5,
         )
-        name = result.stdout.strip()
-        if not name or "/" in name or name.startswith("."):
-            return "default"
-        return name
+        val = result.stdout.strip()
+        if not val:
+            return ["default"]
+        try:
+            parsed = json.loads(val)
+            if isinstance(parsed, list):
+                return parsed
+            return [str(parsed)]
+        except json.JSONDecodeError:
+            return [val]
     except Exception:
-        return "default"
-
-
-def extract_section(body: str, header: str) -> str:
-    lines = body.splitlines(keepends=True)
-    capturing = False
-    captured: list[str] = []
-    for line in lines:
-        if line.startswith("## "):
-            if capturing:
-                break
-            if line.strip() == f"## {header}":
-                capturing = True
-                continue
-        elif capturing:
-            captured.append(line)
-    return "".join(captured).strip("\n")
+        return ["default"]
 
 
 def render_prompt(
@@ -55,18 +45,42 @@ def render_prompt(
     backlog_titles: str,
 ) -> str:
     sprint_path = script_dir / "SPRINT.md"
-    template_name = read_template_name(project_dir, script_dir)
-    template_file = script_dir / "templates" / template_name / "template.md"
-    if not template_file.exists():
-        template_file = script_dir / "templates" / "default" / "template.md"
-    allow = block = ""
-    if template_file.exists():
-        tpl = template_file.read_text()
-        allow = extract_section(tpl, "Allow")
-        block = extract_section(tpl, "Block")
+    template_names = read_template_names(project_dir, script_dir)
+    if not template_names:
+        template_names = ["default"]
+
+    allow_rules = []
+    block_rules = []
+
+    for tpl in template_names:
+        rules_file = script_dir / "templates" / tpl / "rules.json"
+        if not rules_file.exists():
+            continue
+        try:
+            data = json.loads(rules_file.read_text())
+            if "allows" in data and isinstance(data["allows"], list):
+                allow_rules.extend(data["allows"])
+            if "blocks" in data and isinstance(data["blocks"], list):
+                block_rules.extend(data["blocks"])
+        except Exception:
+            pass
+
+    if not allow_rules and not block_rules:
+        fallback = script_dir / "templates" / "default" / "rules.json"
+        if fallback.exists():
+            try:
+                data = json.loads(fallback.read_text())
+                allow_rules.extend(data.get("allows", []))
+                block_rules.extend(data.get("blocks", []))
+            except Exception:
+                pass
+
+    allow_text = "\n".join(f"- {r}" for r in allow_rules) if allow_rules else ""
+    block_text = "\n".join(f"- {r}" for r in block_rules) if block_rules else ""
+
     sprint_body = sprint_path.read_text()
-    sprint_body = sprint_body.replace("<!-- AUTO:TEMPLATE_ALLOW -->", allow, 1)
-    sprint_body = sprint_body.replace("<!-- AUTO:TEMPLATE_BLOCK -->", block, 1)
+    sprint_body = sprint_body.replace("<!-- AUTO:TEMPLATE_ALLOW -->", allow_text, 1)
+    sprint_body = sprint_body.replace("<!-- AUTO:TEMPLATE_BLOCK -->", block_text, 1)
 
     header = "\n".join(
         [

@@ -68,8 +68,8 @@ BOOL_KEYS = {
     "experimental.vira_worktree",
     "experimental.parallel_sprints",
 }
-STRING_KEYS = {"mode.template", "persona.scope"}
-VALID_TEMPLATES = {"gstack", "default"}
+STRING_KEYS = {"persona.scope"}
+LIST_KEYS = {"mode.templates"}
 VALID_PERSONA_SCOPES = {"global", "project"}
 
 # Experimental keys surface a stderr warning on every `check` so the user
@@ -84,7 +84,7 @@ DEFAULTS: dict[str, Any] = {
     "mode": {
         "worktrees": False,
         "careful_hook": False,
-        "template": "gstack",
+        "templates": ["gstack"],
     },
     "persona": {
         "scope": "global",
@@ -192,6 +192,13 @@ def load_effective(project: Path | None) -> dict[str, Any]:
     merged = _deep_merge(merged, _load_json(global_config_path()))
     if project is not None:
         merged = _deep_merge(merged, _load_json(project_config_path(project)))
+    
+    # Backward compatibility: promote legacy mode.template string to mode.templates array
+    if "mode" in merged and "template" in merged["mode"]:
+        tpl = merged["mode"].pop("template")
+        if "templates" not in merged["mode"]:
+            merged["mode"]["templates"] = [tpl] if tpl else ["default"]
+
     return merged
 
 
@@ -233,13 +240,11 @@ def _coerce_value(key: str, raw: str) -> Any:
         if parsed is None:
             die(f"invalid bool for {key}: {raw} (use true|false|on|off)")
         return parsed
-    if key == "mode.template":
-        cleaned = raw.strip()
-        if not cleaned:
-            die("template name is required")
-        # Safety: reject path traversal / dot-prefix like build-sprint-prompt.py
-        if cleaned.startswith(".") or "/" in cleaned or "\\" in cleaned:
-            die(f"invalid template name: {cleaned}")
+    if key in LIST_KEYS:
+        cleaned = [x.strip() for x in raw.split(",") if x.strip()]
+        for c in cleaned:
+            if c.startswith(".") or "/" in c or "\\" in c:
+                die(f"invalid item in list: {c}")
         return cleaned
     if key == "persona.scope":
         if raw not in VALID_PERSONA_SCOPES:
@@ -267,6 +272,8 @@ def cmd_get(args: argparse.Namespace) -> None:
         print("true" if value else "false")
     elif value is None:
         print("")
+    elif isinstance(value, list) or isinstance(value, dict):
+        print(json.dumps(value))
     else:
         print(value)
 
@@ -324,18 +331,14 @@ def cmd_setup(args: argparse.Namespace) -> None:
         die(f"invalid --worktrees: {args.worktrees}")
     if args.careful and careful is None:
         die(f"invalid --careful: {args.careful}")
-    if args.template and args.template not in VALID_TEMPLATES and (
-        args.template.startswith(".") or "/" in args.template
-    ):
-        die(f"invalid --template: {args.template}")
 
     def mutate(cfg: dict[str, Any]) -> None:
         if worktrees is not None:
             _set_nested(cfg, "mode.worktrees", worktrees)
         if careful is not None:
             _set_nested(cfg, "mode.careful_hook", careful)
-        if args.template:
-            _set_nested(cfg, "mode.template", args.template)
+        if getattr(args, "templates", None):
+            _set_nested(cfg, "mode.templates", _coerce_value("mode.templates", args.templates))
         if args.persona_scope:
             if args.persona_scope not in VALID_PERSONA_SCOPES:
                 die(f"invalid --persona-scope: {args.persona_scope}")
@@ -479,7 +482,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_setup.add_argument("--project", default=None)
     p_setup.add_argument("--worktrees", default=None, help="on|off")
     p_setup.add_argument("--careful", default=None, help="on|off")
-    p_setup.add_argument("--template", default=None)
+    p_setup.add_argument("--templates", default=None, help="comma separated list of templates")
     p_setup.add_argument(
         "--persona-scope",
         default=None,
