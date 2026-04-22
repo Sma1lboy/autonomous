@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>autonomous — you sleep. it ships.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <template id="__bundler_thumbnail" data-bg-color="#0a0a0b">
+    <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+      <rect width="1200" height="800" fill="#0a0a0b"/>
+      <circle cx="600" cy="360" r="14" fill="oklch(0.78 0.17 142)"/>
+      <text x="600" y="480" font-family="ui-monospace, Menlo, monospace" font-weight="400" font-size="64" text-anchor="middle" fill="#ededec" font-style="italic">you sleep. it ships.</text>
+      <text x="600" y="560" font-family="ui-monospace, Menlo, monospace" font-weight="500" font-size="28" text-anchor="middle" fill="#9a9a97" letter-spacing="6">AUTONOMOUS</text>
+    </svg>
+  </template>
+  <div id="root"></div>
+  <script>
+    window.TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "accent": "green",
+      "density": "comfortable",
+      "showLiveLog": true
+    }/*EDITMODE-END*/;
+  </script>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <script type="text/babel" src="src/app.jsx"></script>
+</body>
+</html>

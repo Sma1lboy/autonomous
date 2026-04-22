@@ -1,39 +1,94 @@
 #!/usr/bin/env python3
-"""Render the sprint master prompt."""
+"""Render the sprint master prompt.
+
+Resolves the active worker-task templates, loads each template's rules.json
+(with `allows` and `blocks` lists), and substitutes them into the
+<!-- AUTO:TEMPLATE_ALLOW --> / <!-- AUTO:TEMPLATE_BLOCK --> markers in
+SPRINT.md. Writes the rendered prompt to <project>/.autonomous/sprint-prompt.md.
+"""
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
 
 
-def read_template_names(project_dir: Path, script_dir: Path) -> list[str]:
-    user_config = script_dir / "scripts" / "user-config.py"
-    if not user_config.exists():
-        return ["default"]
-    try:
-        result = subprocess.run(
-            [sys.executable, str(user_config), "get", "mode.templates", str(project_dir)],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=5,
-        )
-        val = result.stdout.strip()
-        if not val:
-            return ["default"]
+def _safe_name(name: str) -> bool:
+    """Reject path-traversal tokens. Mirrors user-config.py's list-item guard."""
+    return bool(name) and not name.startswith(".") and "/" not in name and "\\" not in name
+
+
+def _read_legacy_template(project_dir: Path, script_dir: Path) -> str | None:
+    """Back-compat: pre-user-config projects stored a single template name in
+    `<project>/.autonomous/skill-config.json` or `<skill_dir>/skill-config.json`.
+    Return the first non-empty, non-traversal name found; else None."""
+    for path in (
+        project_dir / ".autonomous" / "skill-config.json",
+        script_dir / "skill-config.json",
+    ):
+        if not path.exists():
+            continue
         try:
-            parsed = json.loads(val)
-            if isinstance(parsed, list):
-                return parsed
-            return [str(parsed)]
-        except json.JSONDecodeError:
-            return [val]
-    except Exception:
-        return ["default"]
+            data = json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        name = data.get("template")
+        if isinstance(name, str) and _safe_name(name):
+            return name
+    return None
+
+
+def read_template_names(project_dir: Path, script_dir: Path) -> list[str]:
+    """Template resolution order:
+    1. `mode.templates` via user-config.py (honors env + project + global).
+    2. Legacy `skill-config.json` at project or skill root.
+    3. `["gstack"]` — the default toolchain we ship with.
+    """
+    user_config = script_dir / "scripts" / "user-config.py"
+    if user_config.exists():
+        try:
+            result = subprocess.run(
+                [sys.executable, str(user_config), "get", "mode.templates", str(project_dir)],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=5,
+            )
+            val = result.stdout.strip()
+            if val:
+                try:
+                    parsed = json.loads(val)
+                    if isinstance(parsed, list) and parsed:
+                        return [str(x) for x in parsed]
+                    if isinstance(parsed, str) and parsed:
+                        return [parsed]
+                except json.JSONDecodeError:
+                    return [val]
+        except Exception:
+            pass
+
+    legacy = _read_legacy_template(project_dir, script_dir)
+    if legacy:
+        return [legacy]
+
+    return ["gstack"]
+
+
+def _load_rules(rules_file: Path) -> tuple[list[str], list[str]]:
+    """Extract (allows, blocks) from a rules.json; silent on any error."""
+    try:
+        data = json.loads(rules_file.read_text())
+    except (json.JSONDecodeError, OSError):
+        return [], []
+    if not isinstance(data, dict):
+        return [], []
+    allows = data.get("allows") if isinstance(data.get("allows"), list) else []
+    blocks = data.get("blocks") if isinstance(data.get("blocks"), list) else []
+    return [str(x) for x in allows], [str(x) for x in blocks]
 
 
 def render_prompt(
@@ -45,51 +100,38 @@ def render_prompt(
     backlog_titles: str,
 ) -> str:
     sprint_path = script_dir / "SPRINT.md"
-    template_names = read_template_names(project_dir, script_dir)
-    if not template_names:
-        template_names = []
+    requested = read_template_names(project_dir, script_dir)
+    safe = [t for t in requested if _safe_name(t)]
+    if not safe:
+        safe = ["default"]
 
-    active_set = set(template_names)
-    for rules_file in script_dir.glob("templates/*/rules.json"):
-        try:
-            data = json.loads(rules_file.read_text())
-            if data.get("always_on") is True:
-                active_set.add(rules_file.parent.name)
-        except Exception:
-            pass
-            
-    template_names = list(active_set)
-    if not template_names:
-        template_names = ["default"]
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for tpl in safe:
+        if tpl in seen:
+            continue
+        seen.add(tpl)
+        ordered.append(tpl)
 
-    allow_rules = []
-    block_rules = []
-
-    for tpl in template_names:
+    allow_rules: list[str] = []
+    block_rules: list[str] = []
+    for tpl in ordered:
         rules_file = script_dir / "templates" / tpl / "rules.json"
         if not rules_file.exists():
             continue
-        try:
-            data = json.loads(rules_file.read_text())
-            if "allows" in data and isinstance(data["allows"], list):
-                allow_rules.extend(data["allows"])
-            if "blocks" in data and isinstance(data["blocks"], list):
-                block_rules.extend(data["blocks"])
-        except Exception:
-            pass
+        a, b = _load_rules(rules_file)
+        allow_rules.extend(a)
+        block_rules.extend(b)
 
     if not allow_rules and not block_rules:
         fallback = script_dir / "templates" / "default" / "rules.json"
         if fallback.exists():
-            try:
-                data = json.loads(fallback.read_text())
-                allow_rules.extend(data.get("allows", []))
-                block_rules.extend(data.get("blocks", []))
-            except Exception:
-                pass
+            a, b = _load_rules(fallback)
+            allow_rules.extend(a)
+            block_rules.extend(b)
 
-    allow_text = "\n".join(f"- {r}" for r in allow_rules) if allow_rules else ""
-    block_text = "\n".join(f"- {r}" for r in block_rules) if block_rules else ""
+    allow_text = "\n".join(f"- {r}" for r in allow_rules)
+    block_text = "\n".join(f"- {r}" for r in block_rules)
 
     sprint_body = sprint_path.read_text()
     sprint_body = sprint_body.replace("<!-- AUTO:TEMPLATE_ALLOW -->", allow_text, 1)

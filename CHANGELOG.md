@@ -4,6 +4,22 @@ All notable changes to autonomous-skill are documented here.
 
 ## [Unreleased]
 
+### Changed
+- Templates now live at `templates/<name>/rules.json` with `allows` + `blocks` arrays (replacing `template.md` with `## Allow` / `## Block` markdown sections). Multiple templates can be composed via `mode.templates` — a list of names that merge their rules in order, with duplicates dropped.
+- `mode.templates` (list) replaces `mode.template` (string) as the canonical key. Default is `["gstack"]` so first-time users keep seeing the gstack slash-command suggestions. The singular `mode.template` still works as a deprecated read alias (returns `mode.templates[0]`) and write alias (writes a single-item array, emits a warning).
+- `scripts/build-sprint-prompt.py` rewritten to compose multiple templates, rejects path-traversal names at render time (defense-in-depth alongside the existing `set`-time guard), and falls back to `default` rules if nothing loads.
+- `scripts/user-config.py` — `DEFAULTS.mode.templates = ["gstack"]`. `setup` accepts `--templates <a,b,...>` and keeps `--template <name>` as a single-name alias. Legacy `<project>/.autonomous/skill-config.json` is still read when no new config is present.
+- Schema updated: `mode.templates` documented as the canonical list key with default `["gstack"]` and an explicit path-traversal note.
+
+### Added
+- `tests/test_build_sprint_prompt.sh` rewritten for the rules.json format; adds multi-template composition, duplicate-collapse, render-time traversal guard, malformed-rules resilience, and legacy `skill-config.json` read cases.
+- `tests/test_user_config.sh` extended to cover the `mode.template` → `mode.templates` migration (read alias, write alias with deprecation warning, traversal rejection via the deprecated alias).
+
+### Removed
+- `templates/<name>/template.md` — superseded by `rules.json`.
+- `skill-config.json` at the repo root — no longer the default-selection source; defaults live in `DEFAULTS` in `user-config.py`.
+
+
 ## [0.7.0] — 2026-04-19
 
 ### Changed

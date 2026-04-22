@@ -21,20 +21,27 @@ Commands:
                               to run the first-time AskUserQuestion flow.
   get <key> [project]       — print the effective value (with env overrides).
                               Example keys: mode.worktrees, mode.careful_hook,
-                              mode.template, persona.scope
+                              mode.templates, persona.scope.
+                              `mode.template` (singular) still works as a
+                              read-only alias returning the first entry of
+                              `mode.templates`.
   set <key> <value> [--scope global|project] [--project <dir>]
                             — persist a value at the chosen scope.
+                              `mode.template` is a deprecated write alias and
+                              routes to `mode.templates`.
   setup [--scope global|project] [--project <dir>]
-        [--worktrees on|off] [--careful on|off] [--template <name>]
+        [--worktrees on|off] [--careful on|off]
+        [--templates <a,b,...>] [--template <name>]
                             — write a full initial config in one shot.
                               Used by SKILL.md after the AskUserQuestion flow.
+                              `--template` is a legacy single-name alias.
   show [--scope global|project|effective] [--project <dir>]
                             — dump the config as JSON.
   paths [--project <dir>]   — print resolved global/project paths (for debugging).
 
 Values:
   mode.worktrees, mode.careful_hook  → bool (true|false)
-  mode.template                      → string (gstack|default|<custom>)
+  mode.templates                     → list[str] (e.g., ["gstack"], ["default","custom"])
   persona.scope                      → string (global|project)
 """
 from __future__ import annotations
@@ -84,7 +91,7 @@ DEFAULTS: dict[str, Any] = {
     "mode": {
         "worktrees": False,
         "careful_hook": False,
-        "templates": [],
+        "templates": ["gstack"],
     },
     "persona": {
         "scope": "global",
@@ -186,18 +193,64 @@ def _set_nested(data: dict[str, Any], dotted: str, value: Any) -> None:
     cur[parts[-1]] = value
 
 
+def _legacy_skill_config_template(project: Path | None) -> str | None:
+    """Pre-user-config installs kept the template selector in
+    `<project>/.autonomous/skill-config.json` (project scope) with
+    `{"template": "<name>"}`. Return its value if present; otherwise None."""
+    if project is None:
+        return None
+    path = project / ".autonomous" / "skill-config.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    name = data.get("template")
+    return name if isinstance(name, str) and name else None
+
+
 def load_effective(project: Path | None) -> dict[str, Any]:
     """Merged view: defaults ← global ← project. No env overrides applied here."""
     merged = json.loads(json.dumps(DEFAULTS))  # deep copy
     merged = _deep_merge(merged, _load_json(global_config_path()))
     if project is not None:
         merged = _deep_merge(merged, _load_json(project_config_path(project)))
-    
-    # Backward compatibility: promote legacy mode.template string to mode.templates array
-    if "mode" in merged and "template" in merged["mode"]:
-        tpl = merged["mode"].pop("template")
-        if "templates" not in merged["mode"]:
-            merged["mode"]["templates"] = [tpl] if tpl else ["default"]
+
+    # Backward compat: promote legacy `mode.template` string to `mode.templates` array.
+    # Only happens when the project or global config was written against the old
+    # schema and hasn't been migrated yet.
+    mode = merged.get("mode")
+    if isinstance(mode, dict) and "template" in mode:
+        tpl = mode.pop("template")
+        if isinstance(tpl, str) and tpl:
+            mode["templates"] = [tpl]
+
+    # Back-compat: if no project config.json set templates, fall through to the
+    # legacy skill-config.json file. Project config.json (new) still wins when present.
+    if project is not None:
+        project_cfg = _load_json(project_config_path(project))
+        project_has_templates = (
+            isinstance(project_cfg.get("mode"), dict)
+            and (
+                "templates" in project_cfg["mode"]
+                or "template" in project_cfg["mode"]
+            )
+        )
+        global_cfg = _load_json(global_config_path())
+        global_has_templates = (
+            isinstance(global_cfg.get("mode"), dict)
+            and (
+                "templates" in global_cfg["mode"]
+                or "template" in global_cfg["mode"]
+            )
+        )
+        if not project_has_templates and not global_has_templates:
+            legacy = _legacy_skill_config_template(project)
+            if legacy:
+                merged.setdefault("mode", {})["templates"] = [legacy]
 
     return merged
 
@@ -255,19 +308,38 @@ def _coerce_value(key: str, raw: str) -> Any:
     die(f"unknown key: {key}")
 
 
+# Keys the user may write through deprecated aliases. The alias path routes
+# the old single-value name to the new canonical key so existing scripts
+# (e.g., `set mode.template gstack`) keep working.
+DEPRECATED_ALIASES: dict[str, str] = {
+    "mode.template": "mode.templates",
+}
+
+
 def cmd_get(args: argparse.Namespace) -> None:
     project = Path(args.project).resolve() if args.project else None
     cfg = load_effective(project)
+    key = args.key
 
     # Env override wins
-    env_name = ENV_OVERRIDES.get(args.key)
+    env_name = ENV_OVERRIDES.get(key)
     if env_name and env_name in os.environ and os.environ[env_name]:
         parsed = _parse_bool_env(os.environ[env_name])
         if parsed is not None:
             print("true" if parsed else "false")
             return
 
-    value = _get_nested(cfg, args.key)
+    # Deprecated read alias: `mode.template` returns the first element of
+    # `mode.templates` so older scripts keep working.
+    if key == "mode.template":
+        templates = _get_nested(cfg, "mode.templates")
+        if isinstance(templates, list) and templates:
+            print(templates[0])
+        else:
+            print("")
+        return
+
+    value = _get_nested(cfg, key)
     if isinstance(value, bool):
         print("true" if value else "false")
     elif value is None:
@@ -312,6 +384,15 @@ def _write_at_scope(
 
 def cmd_set(args: argparse.Namespace) -> None:
     key, value = args.key, args.value
+    # Deprecated write alias: rewrite `mode.template foo` as `mode.templates [foo]`.
+    # We emit a stderr warning but don't fail — avoids breaking existing automation.
+    if key in DEPRECATED_ALIASES:
+        target = DEPRECATED_ALIASES[key]
+        print(
+            f"WARNING: '{key}' is deprecated; writing to '{target}' instead.",
+            file=sys.stderr,
+        )
+        key = target
     coerced = _coerce_value(key, value)
     project = Path(args.project).resolve() if args.project else None
 
@@ -339,6 +420,10 @@ def cmd_setup(args: argparse.Namespace) -> None:
             _set_nested(cfg, "mode.careful_hook", careful)
         if getattr(args, "templates", None):
             _set_nested(cfg, "mode.templates", _coerce_value("mode.templates", args.templates))
+        elif getattr(args, "template", None):
+            # Legacy alias: singular --template → one-item templates array
+            single = _coerce_value("mode.templates", args.template)
+            _set_nested(cfg, "mode.templates", single)
         if args.persona_scope:
             if args.persona_scope not in VALID_PERSONA_SCOPES:
                 die(f"invalid --persona-scope: {args.persona_scope}")
@@ -483,6 +568,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_setup.add_argument("--worktrees", default=None, help="on|off")
     p_setup.add_argument("--careful", default=None, help="on|off")
     p_setup.add_argument("--templates", default=None, help="comma separated list of templates")
+    p_setup.add_argument(
+        "--template",
+        default=None,
+        help="legacy alias for --templates; writes a single-item templates array",
+    )
     p_setup.add_argument(
         "--persona-scope",
         default=None,
