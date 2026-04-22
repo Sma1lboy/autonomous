@@ -47,6 +47,19 @@ def render_prompt(
     sprint_path = script_dir / "SPRINT.md"
     template_names = read_template_names(project_dir, script_dir)
     if not template_names:
+        template_names = []
+
+    active_set = set(template_names)
+    for rules_file in script_dir.glob("templates/*/rules.json"):
+        try:
+            data = json.loads(rules_file.read_text())
+            if data.get("always_on") is True:
+                active_set.add(rules_file.parent.name)
+        except Exception:
+            pass
+            
+    template_names = list(active_set)
+    if not template_names:
         template_names = ["default"]
 
     allow_rules = []

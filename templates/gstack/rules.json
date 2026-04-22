@@ -1,5 +1,6 @@
 {
   "name": "gstack",
+  "always_on": true,
   "description": "Worker-facing slash commands for the gstack toolchain.",
   "allows": [
     "New idea? -> \"Run /office-hours. Context: ...\"",
