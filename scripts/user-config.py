@@ -84,7 +84,7 @@ DEFAULTS: dict[str, Any] = {
     "mode": {
         "worktrees": False,
         "careful_hook": False,
-        "templates": ["gstack"],
+        "templates": [],
     },
     "persona": {
         "scope": "global",
