@@ -60,10 +60,9 @@ Conductor (SKILL.md, user's CC session)
 - `OWNER.md.template` — Template for manual persona configuration
 - `tests/test_helpers.sh` — Shared test framework (assertions, temp dirs, result summary)
 - `.claude/skills/diff-sessions/SKILL.md` — Compare two worker sessions side-by-side
-- `skill-config.json` — Default template selector (overridden per-project at `.autonomous/skill-config.json`)
-- `templates/gstack/template.md` — Worker slash-command set for the gstack toolchain
-- `templates/default/template.md` — Generic worker guidance with no toolchain assumptions
-- `scripts/build-sprint-prompt.py` — Inlines SPRINT.md + template allow/block sections into the sprint master prompt
+- `templates/gstack/rules.json` — gstack toolchain worker slash-command rules (allows + blocks)
+- `templates/default/rules.json` — Generic worker guidance with no toolchain assumptions
+- `scripts/build-sprint-prompt.py` — Composes the active `mode.templates` rules into SPRINT.md's allow/block markers
 - `explore-ralph-loop/SKILL.md` — Explore Ralph Loop: detects toolchain, captures execute-verify-fix patterns as reusable skills
 - `scripts/register-ralph-loops.sh` — Dynamic scanner: symlinks ralph-loop-skills/ to ~/.claude/skills/
 - `ralph-loop-skills/` — Generated loop skills (gitignored, per-user)
@@ -123,23 +122,28 @@ Cross-session persistent work queue in `.autonomous/backlog.json`:
 
 Sprint master worker-task suggestions and boundary blacklists are driven by
 swappable templates, not hardcoded. Each template lives at
-`templates/<name>/template.md` with two sections: `## Allow` (worker-task
-examples) and `## Block` (commands the sprint master must never invoke).
+`templates/<name>/rules.json` with two fields: `allows` (worker-task example
+one-liners) and `blocks` (commands the sprint master must never invoke).
+Multiple templates can be composed — their rules concatenate in the order
+listed, with duplicates collapsed.
 
-Template selection hierarchy (first match wins):
-1. `<project>/.autonomous/skill-config.json` — per-project override
-2. `<skill_root>/skill-config.json` — global default (ships as `gstack`)
-3. Fallback to `default` template if neither exists or requested template is missing
+Template selection (precedence high → low):
+1. Env / project / global `mode.templates` list via `user-config.py`
+2. Legacy `<project>/.autonomous/skill-config.json` with `{"template":"<name>"}`
+3. Default `["gstack"]` — ships on so new users see the gstack slash-commands
 
-Config format: `{"template": "<name>"}`. Unknown names, malformed JSON, and
-path-traversal attempts (`../`, dot-prefixes) all fall through to the default
-template. `scripts/build-sprint-prompt.py` resolves the template, extracts the
-Allow/Block sections with Python, and substitutes them into the
-`<!-- AUTO:TEMPLATE_ALLOW -->` / `<!-- AUTO:TEMPLATE_BLOCK -->` markers in
-SPRINT.md as it writes `.autonomous/sprint-prompt.md`.
+Names with `/`, `\`, or a leading `.` are rejected as path traversal both at
+`set` time (in `user-config.py`) and at render time (in `build-sprint-prompt.py`).
+Unknown names silently skip; if nothing loads, `default` is used as a safety
+net.
 
-To add a new template: create `templates/<name>/template.md` with both sections,
-then set `{"template":"<name>"}` in `skill-config.json` (or the project override).
+Config format: `{"mode":{"templates":["<name>", ...]}}`. The singular
+`mode.template` still reads (returns the first item) and writes (routes to
+`mode.templates`, emits deprecation warning) for back-compat with older
+automation.
+
+To add a new template: create `templates/<name>/rules.json` with `allows` and
+`blocks` arrays, then add `"<name>"` to `mode.templates` via `user-config.py set`.
 
 ## Safety
 
@@ -150,7 +154,7 @@ then set `{"template":"<name>"}` in `skill-config.json` (or the project override
 - 15-minute timeout per CC invocation (configurable via `CC_TIMEOUT`)
 - All changes on `auto/` branches (never main)
 - --permission-mode auto (blocks dangerous operations)
-- Excluded workflows: configured per template (see `templates/<name>/template.md` `## Block` section)
+- Excluded workflows: configured per template (see `templates/<name>/rules.json` `blocks` field)
 - 15-minute timeout per CC invocation
 - Session cost budget (`MAX_COST_USD` env var or `--max-cost` flag)
 - SIGINT + sentinel file for graceful shutdown

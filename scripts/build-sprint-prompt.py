@@ -1,69 +1,94 @@
 #!/usr/bin/env python3
-"""Render the sprint master prompt."""
+"""Render the sprint master prompt.
+
+Resolves the active worker-task templates, loads each template's rules.json
+(with `allows` and `blocks` lists), and substitutes them into the
+<!-- AUTO:TEMPLATE_ALLOW --> / <!-- AUTO:TEMPLATE_BLOCK --> markers in
+SPRINT.md. Writes the rendered prompt to <project>/.autonomous/sprint-prompt.md.
+"""
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
 
 
-def read_template_name(project_dir: Path, script_dir: Path) -> str:
-    """Template resolution order (first match wins):
-    1. `<project>/.autonomous/config.json` (new, via user-config.py)
-    2. `<project>/.autonomous/skill-config.json` (legacy, pre-user-config)
-    3. `~/.claude/autonomous/config.json` (new global)
-    4. `<skill_dir>/skill-config.json` (shipped default)
-    5. "default"
-    Names containing `/` or starting with `.` are rejected (path traversal)."""
-    def load_json(path: Path) -> dict:
+def _safe_name(name: str) -> bool:
+    """Reject path-traversal tokens. Mirrors user-config.py's list-item guard."""
+    return bool(name) and not name.startswith(".") and "/" not in name and "\\" not in name
+
+
+def _read_legacy_template(project_dir: Path, script_dir: Path) -> str | None:
+    """Back-compat: pre-user-config projects stored a single template name in
+    `<project>/.autonomous/skill-config.json` or `<skill_dir>/skill-config.json`.
+    Return the first non-empty, non-traversal name found; else None."""
+    for path in (
+        project_dir / ".autonomous" / "skill-config.json",
+        script_dir / "skill-config.json",
+    ):
         if not path.exists():
-            return {}
+            continue
         try:
             data = json.loads(path.read_text())
         except (json.JSONDecodeError, OSError):
-            return {}
-        return data if isinstance(data, dict) else {}
-
-    def extract(data: dict, key_path: list[str]) -> str | None:
-        cur = data
-        for k in key_path:
-            if not isinstance(cur, dict):
-                return None
-            cur = cur.get(k)
-        return cur if isinstance(cur, str) and cur else None
-
-    candidates = [
-        extract(load_json(project_dir / ".autonomous" / "config.json"), ["mode", "template"]),
-        extract(load_json(project_dir / ".autonomous" / "skill-config.json"), ["template"]),
-        extract(
-            load_json(Path.home() / ".claude" / "autonomous" / "config.json"),
-            ["mode", "template"],
-        ),
-        extract(load_json(script_dir / "skill-config.json"), ["template"]),
-    ]
-    name = next((c for c in candidates if c), "default")
-    if "/" in name or name.startswith("."):
-        return "default"
-    return name
+            continue
+        if not isinstance(data, dict):
+            continue
+        name = data.get("template")
+        if isinstance(name, str) and _safe_name(name):
+            return name
+    return None
 
 
-def extract_section(body: str, header: str) -> str:
-    lines = body.splitlines(keepends=True)
-    capturing = False
-    captured: list[str] = []
-    for line in lines:
-        if line.startswith("## "):
-            if capturing:
-                break
-            if line.strip() == f"## {header}":
-                capturing = True
-                continue
-        elif capturing:
-            captured.append(line)
-    return "".join(captured).strip("\n")
+def read_template_names(project_dir: Path, script_dir: Path) -> list[str]:
+    """Template resolution order:
+    1. `mode.templates` via user-config.py (honors env + project + global).
+    2. Legacy `skill-config.json` at project or skill root.
+    3. `["gstack"]` — the default toolchain we ship with.
+    """
+    user_config = script_dir / "scripts" / "user-config.py"
+    if user_config.exists():
+        try:
+            result = subprocess.run(
+                [sys.executable, str(user_config), "get", "mode.templates", str(project_dir)],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=5,
+            )
+            val = result.stdout.strip()
+            if val:
+                try:
+                    parsed = json.loads(val)
+                    if isinstance(parsed, list) and parsed:
+                        return [str(x) for x in parsed]
+                    if isinstance(parsed, str) and parsed:
+                        return [parsed]
+                except json.JSONDecodeError:
+                    return [val]
+        except Exception:
+            pass
+
+    legacy = _read_legacy_template(project_dir, script_dir)
+    if legacy:
+        return [legacy]
+
+    return ["gstack"]
+
+
+def _load_rules(rules_file: Path) -> tuple[list[str], list[str]]:
+    """Extract (allows, blocks) from a rules.json; silent on any error."""
+    try:
+        data = json.loads(rules_file.read_text())
+    except (json.JSONDecodeError, OSError):
+        return [], []
+    if not isinstance(data, dict):
+        return [], []
+    allows = data.get("allows") if isinstance(data.get("allows"), list) else []
+    blocks = data.get("blocks") if isinstance(data.get("blocks"), list) else []
+    return [str(x) for x in allows], [str(x) for x in blocks]
 
 
 def render_prompt(
@@ -75,18 +100,42 @@ def render_prompt(
     backlog_titles: str,
 ) -> str:
     sprint_path = script_dir / "SPRINT.md"
-    template_name = read_template_name(project_dir, script_dir)
-    template_file = script_dir / "templates" / template_name / "template.md"
-    if not template_file.exists():
-        template_file = script_dir / "templates" / "default" / "template.md"
-    allow = block = ""
-    if template_file.exists():
-        tpl = template_file.read_text()
-        allow = extract_section(tpl, "Allow")
-        block = extract_section(tpl, "Block")
+    requested = read_template_names(project_dir, script_dir)
+    safe = [t for t in requested if _safe_name(t)]
+    if not safe:
+        safe = ["default"]
+
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for tpl in safe:
+        if tpl in seen:
+            continue
+        seen.add(tpl)
+        ordered.append(tpl)
+
+    allow_rules: list[str] = []
+    block_rules: list[str] = []
+    for tpl in ordered:
+        rules_file = script_dir / "templates" / tpl / "rules.json"
+        if not rules_file.exists():
+            continue
+        a, b = _load_rules(rules_file)
+        allow_rules.extend(a)
+        block_rules.extend(b)
+
+    if not allow_rules and not block_rules:
+        fallback = script_dir / "templates" / "default" / "rules.json"
+        if fallback.exists():
+            a, b = _load_rules(fallback)
+            allow_rules.extend(a)
+            block_rules.extend(b)
+
+    allow_text = "\n".join(f"- {r}" for r in allow_rules)
+    block_text = "\n".join(f"- {r}" for r in block_rules)
+
     sprint_body = sprint_path.read_text()
-    sprint_body = sprint_body.replace("<!-- AUTO:TEMPLATE_ALLOW -->", allow, 1)
-    sprint_body = sprint_body.replace("<!-- AUTO:TEMPLATE_BLOCK -->", block, 1)
+    sprint_body = sprint_body.replace("<!-- AUTO:TEMPLATE_ALLOW -->", allow_text, 1)
+    sprint_body = sprint_body.replace("<!-- AUTO:TEMPLATE_BLOCK -->", block_text, 1)
 
     header = "\n".join(
         [
