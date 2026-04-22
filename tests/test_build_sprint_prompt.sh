@@ -20,13 +20,13 @@ make_skill() {
   cp "$REPO/SPRINT.md" "$d/"
   mkdir -p "$d/scripts" "$d/templates"
   cp "$REPO/scripts/build-sprint-prompt.py" "$d/scripts/"
+  cp "$REPO/scripts/user-config.py" "$d/scripts/"
   cp "$REPO/scripts/backlog.py" "$d/scripts/"
-  # Copy templates except the omitted one
   for t in "$REPO"/templates/*/; do
     local name; name="$(basename "$t")"
     [ "$name" = "$omit" ] && continue
     mkdir -p "$d/templates/$name"
-    cp "$t/template.md" "$d/templates/$name/"
+    cp "$t/rules.json" "$d/templates/$name/"
   done
   echo "$d"
 }
@@ -39,129 +39,155 @@ make_project() {
 
 run_build() {
   local proj="$1" skill="$2"
-  python3 "$skill/scripts/build-sprint-prompt.py" "$proj" "$skill" 1 "test direction" "" >/dev/null 2>&1
+  local home="${3:-$(new_tmp)}"
+  HOME="$home" python3 "$skill/scripts/build-sprint-prompt.py" "$proj" "$skill" 1 "test direction" "" >/dev/null 2>&1
 }
 
-# ── 1. Default template when no config exists ───────────────────────────
+# ── 1. Default (no config) → gstack ────────────────────────────────────
 
 echo ""
-echo "1. default-when-no-config"
+echo "1. default-when-no-config (gstack ships on)"
 SKILL=$(make_skill)
 PROJ=$(make_project)
 run_build "$PROJ" "$SKILL"
 assert_file_exists "$PROJ/.autonomous/sprint-prompt.md" "prompt written"
-assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "Sketch the smallest version" "default Allow content present"
-assert_file_not_contains "$PROJ/.autonomous/sprint-prompt.md" "/office-hours" "no gstack command leak"
-assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "shipping or deployment commands" "default Block content present"
+assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "/office-hours" "gstack Allow injected by default"
+assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "/ship" "gstack Block injected by default"
 
-# ── 2. Skill-root config selects gstack ──────────────────────────────────
-
-echo ""
-echo "2. skill-root-config-picked"
-SKILL=$(make_skill)
-PROJ=$(make_project)
-echo '{"template":"gstack"}' > "$SKILL/skill-config.json"
-run_build "$PROJ" "$SKILL"
-assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "/office-hours" "gstack Allow inserted"
-assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "/ship" "gstack Block inserted"
-assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "SPRINT_NUMBER: 1" "header preserved"
-
-# ── 3. Project override beats skill-root config ─────────────────────────
+# ── 2. Project config switches to default template ──────────────────────
 
 echo ""
-echo "3. project-override-beats-skill-root"
+echo "2. project-config-switches-to-default"
 SKILL=$(make_skill)
 PROJ=$(make_project)
-echo '{"template":"gstack"}' > "$SKILL/skill-config.json"
-echo '{"template":"default"}' > "$PROJ/.autonomous/skill-config.json"
-run_build "$PROJ" "$SKILL"
-assert_file_not_contains "$PROJ/.autonomous/sprint-prompt.md" "/office-hours" "no gstack leak after override"
-assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "shipping or deployment commands" "default Block used after override"
+H=$(new_tmp)
+HOME="$H" python3 "$SKILL/scripts/user-config.py" set mode.templates default --scope project --project "$PROJ" > /dev/null
+run_build "$PROJ" "$SKILL" "$H"
+assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "Sketch the smallest version" "default Allow present"
+assert_file_not_contains "$PROJ/.autonomous/sprint-prompt.md" "/office-hours" "gstack content suppressed"
 
-# ── 4. Unknown template name falls back to default ──────────────────────
+# ── 3. Multi-template composition ───────────────────────────────────────
+
+echo ""
+echo "3. multi-template-composition"
+SKILL=$(make_skill)
+PROJ=$(make_project)
+H=$(new_tmp)
+HOME="$H" python3 "$SKILL/scripts/user-config.py" set mode.templates "gstack,default" --scope project --project "$PROJ" > /dev/null
+run_build "$PROJ" "$SKILL" "$H"
+assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "/office-hours" "gstack Allow composed"
+assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "Sketch the smallest version" "default Allow composed"
+assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "/ship" "gstack Block composed"
+assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "shipping or deployment commands" "default Block composed"
+
+# ── 4. Unknown template name → empty (after dedupe) then default fallback
 
 echo ""
 echo "4. unknown-template-falls-back-to-default"
 SKILL=$(make_skill)
 PROJ=$(make_project)
-echo '{"template":"nonexistent"}' > "$SKILL/skill-config.json"
-run_build "$PROJ" "$SKILL"
-assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "Sketch the smallest version" "fell back to default"
+H=$(new_tmp)
+HOME="$H" python3 "$SKILL/scripts/user-config.py" set mode.templates "nonexistent" --scope project --project "$PROJ" > /dev/null
+run_build "$PROJ" "$SKILL" "$H"
+assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "Sketch the smallest version" "fell back to default rules"
 assert_file_not_contains "$PROJ/.autonomous/sprint-prompt.md" "/office-hours" "no gstack leak on fallback"
 
-# ── 5. Missing section in template.md leaves placeholder empty ──────────
+# ── 5. Header params + template content both present ───────────────────
 
 echo ""
-echo "5. missing-section-leaves-placeholder-empty"
+echo "5. header-and-template-both-present"
 SKILL=$(make_skill)
 PROJ=$(make_project)
-mkdir -p "$SKILL/templates/allowonly"
-cat > "$SKILL/templates/allowonly/template.md" <<'EOF'
-# allow only
-
-## Allow
-
-- Only-allow content here.
-EOF
-echo '{"template":"allowonly"}' > "$SKILL/skill-config.json"
-run_build "$PROJ" "$SKILL"
-assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "Only-allow content here" "Allow section rendered"
-assert_file_not_contains "$PROJ/.autonomous/sprint-prompt.md" "AUTO:TEMPLATE_BLOCK" "missing Block marker replaced with empty"
-
-# ── 6. Malformed JSON config treated as missing ─────────────────────────
-
-echo ""
-echo "6. malformed-json-treated-as-missing"
-SKILL=$(make_skill)
-PROJ=$(make_project)
-echo '{not valid json' > "$PROJ/.autonomous/skill-config.json"
-echo '{"template":"gstack"}' > "$SKILL/skill-config.json"
-run_build "$PROJ" "$SKILL"
-# Should fall through to skill-root config (gstack)
-assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "/office-hours" "fell through to skill-root on bad project JSON"
-
-# ── 7. Header params AND template content both present ─────────────────
-
-echo ""
-echo "7. header-and-template-both-present"
-SKILL=$(make_skill)
-PROJ=$(make_project)
-echo '{"template":"gstack"}' > "$SKILL/skill-config.json"
+H=$(new_tmp)
 python3 "$SKILL/scripts/build-sprint-prompt.py" "$PROJ" "$SKILL" 7 "build X" "last sprint did Y" >/dev/null 2>&1
 assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "SPRINT_NUMBER: 7" "sprint num in header"
 assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "SPRINT_DIRECTION: build X" "direction in header"
 assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "PREVIOUS_SUMMARY: last sprint did Y" "prev summary in header"
-assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "/office-hours" "template also injected"
+assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "/office-hours" "gstack Allow injected (default on)"
 assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "# Sprint Master" "SPRINT.md body preserved"
 
-# ── 8. No marker leakage in any rendered output ─────────────────────────
+# ── 6. No marker leakage ───────────────────────────────────────────────
 
 echo ""
-echo "8. no-marker-leakage"
+echo "6. no-marker-leakage"
 SKILL=$(make_skill)
 PROJ=$(make_project)
 run_build "$PROJ" "$SKILL"
+assert_file_not_contains "$PROJ/.autonomous/sprint-prompt.md" "AUTO:TEMPLATE_ALLOW" "no Allow marker leak (gstack default)"
+assert_file_not_contains "$PROJ/.autonomous/sprint-prompt.md" "AUTO:TEMPLATE_BLOCK" "no Block marker leak (gstack default)"
+
+H=$(new_tmp)
+HOME="$H" python3 "$SKILL/scripts/user-config.py" set mode.templates default --scope project --project "$PROJ" > /dev/null
+run_build "$PROJ" "$SKILL" "$H"
 assert_file_not_contains "$PROJ/.autonomous/sprint-prompt.md" "AUTO:TEMPLATE_ALLOW" "no Allow marker leak (default)"
 assert_file_not_contains "$PROJ/.autonomous/sprint-prompt.md" "AUTO:TEMPLATE_BLOCK" "no Block marker leak (default)"
-echo '{"template":"gstack"}' > "$SKILL/skill-config.json"
-run_build "$PROJ" "$SKILL"
-assert_file_not_contains "$PROJ/.autonomous/sprint-prompt.md" "AUTO:TEMPLATE_ALLOW" "no Allow marker leak (gstack)"
-assert_file_not_contains "$PROJ/.autonomous/sprint-prompt.md" "AUTO:TEMPLATE_BLOCK" "no Block marker leak (gstack)"
 
-# ── 9. Path-traversal guard ─────────────────────────────────────────────
+# ── 7. Path-traversal guard at render time ─────────────────────────────
+# The user-config CLI already rejects these at write time, but defense-in-depth:
+# if someone hand-edits a config file, build-sprint-prompt.py still refuses
+# to resolve traversal names and falls through to the default rules.
 
 echo ""
-echo "9. path-traversal-guard"
+echo "7. path-traversal-guard-at-render"
 SKILL=$(make_skill)
 PROJ=$(make_project)
-echo '{"template":"../../etc"}' > "$PROJ/.autonomous/skill-config.json"
+mkdir -p "$PROJ/.autonomous"
+# Hand-write malformed config that bypasses CLI validation
+cat > "$PROJ/.autonomous/config.json" <<'EOF'
+{
+  "version": 1,
+  "mode": { "templates": ["../../etc"] }
+}
+EOF
 run_build "$PROJ" "$SKILL"
 assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "Sketch the smallest version" "traversal rejected, default used"
+assert_file_not_contains "$PROJ/.autonomous/sprint-prompt.md" "/office-hours" "no content from traversal name"
 
-# ── 10. CLI help ────────────────────────────────────────────────────────
+# ── 8. Legacy skill-config.json still readable ─────────────────────────
+# Old installs kept template selection in <project>/.autonomous/skill-config.json.
+# That must keep working until explicitly migrated.
 
 echo ""
-echo "10. CLI help"
+echo "8. legacy-skill-config-read"
+SKILL=$(make_skill)
+PROJ=$(make_project)
+echo '{"template":"default"}' > "$PROJ/.autonomous/skill-config.json"
+# No config.json present, nothing in global — legacy read should win
+run_build "$PROJ" "$SKILL"
+assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "Sketch the smallest version" "legacy skill-config used"
+assert_file_not_contains "$PROJ/.autonomous/sprint-prompt.md" "/office-hours" "gstack not selected by default when legacy says default"
+
+# ── 9. Malformed rules.json treated as missing ─────────────────────────
+
+echo ""
+echo "9. malformed-rules-json-treated-as-missing"
+SKILL=$(make_skill)
+PROJ=$(make_project)
+H=$(new_tmp)
+mkdir -p "$SKILL/templates/broken"
+echo 'not valid json' > "$SKILL/templates/broken/rules.json"
+HOME="$H" python3 "$SKILL/scripts/user-config.py" set mode.templates "broken" --scope project --project "$PROJ" > /dev/null
+run_build "$PROJ" "$SKILL" "$H"
+# Broken template contributes nothing; the fallback to default rules fires.
+assert_file_contains "$PROJ/.autonomous/sprint-prompt.md" "Sketch the smallest version" "fell back to default on malformed rules.json"
+
+# ── 10. Duplicate template names deduped ───────────────────────────────
+
+echo ""
+echo "10. duplicate-templates-deduped"
+SKILL=$(make_skill)
+PROJ=$(make_project)
+H=$(new_tmp)
+HOME="$H" python3 "$SKILL/scripts/user-config.py" set mode.templates "gstack,gstack" --scope project --project "$PROJ" > /dev/null
+run_build "$PROJ" "$SKILL" "$H"
+# Count occurrences of a unique gstack-only phrase — should be 1, not 2.
+COUNT=$(grep -c "New idea? -> \"Run /office-hours" "$PROJ/.autonomous/sprint-prompt.md" || true)
+assert_eq "$COUNT" "1" "duplicate template name collapsed to a single injection"
+
+# ── 11. CLI help ────────────────────────────────────────────────────────
+
+echo ""
+echo "11. CLI help"
 OUT=$(python3 "$SCRIPT" --help 2>&1)
 assert_contains "$OUT" "Usage:" "help shows usage"
 

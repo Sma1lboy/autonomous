@@ -34,7 +34,7 @@
           "type": "array",
           "items": { "type": "string" },
           "default": ["gstack"],
-          "description": "Worker-task template name. Ships with 'gstack' and 'default' (generic). Active templates are composed at runtime."
+          "description": "Worker-task templates to compose into each sprint prompt. Default ['gstack'] opts into the gstack slash-command set; replace with ['default'] for generic guidance, or stack multiple (e.g., ['gstack','custom']) to merge their allow/block rules. Names containing '/', '\\', or leading with '.' are rejected as path-traversal attempts."
         }
       }
     },

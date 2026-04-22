@@ -63,12 +63,13 @@ echo ""
 echo "3. setup writes full config"
 
 H=$(sandbox_home)
-HOME="$H" python3 "$UC" setup --scope global --worktrees on --careful on --template gstack --persona-scope global > /dev/null
+# --template is the legacy single-name alias; exercised below in test 7.
+HOME="$H" python3 "$UC" setup --scope global --worktrees on --careful on --templates gstack --persona-scope global > /dev/null
 CONFIG="$H/.claude/autonomous/config.json"
 assert_file_exists "$CONFIG" "global config written"
 assert_file_contains "$CONFIG" '"worktrees": true' "worktrees on persisted"
 assert_file_contains "$CONFIG" '"careful_hook": true' "careful on persisted"
-assert_file_contains "$CONFIG" '"template": "gstack"' "template persisted"
+assert_file_contains "$CONFIG" '"gstack"' "templates list persisted"
 assert_file_contains "$CONFIG" '"scope": "global"' "persona scope persisted"
 assert_file_contains "$CONFIG" '"version": 1' "version field present"
 assert_file_contains "$CONFIG" '"created_at"' "created_at present"
@@ -85,8 +86,12 @@ WT=$(HOME="$H" python3 "$UC" get mode.worktrees "$T")
 assert_eq "$WT" "true" "global worktrees=on read as true"
 CH=$(HOME="$H" python3 "$UC" get mode.careful_hook "$T")
 assert_eq "$CH" "false" "global careful unset → default false"
+# `mode.templates` is the canonical key; `mode.template` still works as a
+# read alias returning the first item.
+TMPLS=$(HOME="$H" python3 "$UC" get mode.templates "$T")
+assert_eq "$TMPLS" '["gstack"]' "templates default=['gstack']"
 TMPL=$(HOME="$H" python3 "$UC" get mode.template "$T")
-assert_eq "$TMPL" "gstack" "template default=gstack"
+assert_eq "$TMPL" "gstack" "legacy mode.template read alias returns first item"
 
 # ── 5. project overrides global ─────────────────────────────────────────
 
@@ -121,7 +126,7 @@ assert_eq "$CH" "true" "careful env override works"
 # ── 7. legacy skill-config.json migration path ──────────────────────────
 
 echo ""
-echo "7. legacy skill-config.json → template"
+echo "7. legacy skill-config.json + mode.template write alias"
 
 H=$(sandbox_home)
 T=$(make_project)
@@ -131,10 +136,13 @@ echo '{"template":"default"}' > "$T/.autonomous/skill-config.json"
 TMPL=$(HOME="$H" python3 "$UC" get mode.template "$T")
 assert_eq "$TMPL" "default" "legacy skill-config.json read as template"
 
-# New config.json should win over legacy
-HOME="$H" python3 "$UC" set mode.template custom-tpl --scope project --project "$T" > /dev/null
+# Deprecated `set mode.template foo` routes to mode.templates and warns.
+OUT=$(HOME="$H" python3 "$UC" set mode.template custom-tpl --scope project --project "$T" 2>&1 >/dev/null)
+assert_contains "$OUT" "deprecated" "deprecated write alias emits warning"
 TMPL=$(HOME="$H" python3 "$UC" get mode.template "$T")
-assert_eq "$TMPL" "custom-tpl" "new config.json beats legacy skill-config.json"
+assert_eq "$TMPL" "custom-tpl" "deprecated alias write lands in mode.templates[0]"
+TMPLS=$(HOME="$H" python3 "$UC" get mode.templates "$T")
+assert_eq "$TMPLS" '["custom-tpl"]' "underlying mode.templates is a single-item list"
 
 # ── 8. set: validation ──────────────────────────────────────────────────
 
@@ -147,15 +155,21 @@ if HOME="$H" python3 "$UC" set mode.worktrees notabool --scope global 2>/dev/nul
 else
   ok "invalid bool rejected"
 fi
-if HOME="$H" python3 "$UC" set mode.template "../path" --scope global 2>/dev/null; then
+if HOME="$H" python3 "$UC" set mode.templates "../path" --scope global 2>/dev/null; then
   fail "path-traversal template should be rejected"
 else
   ok "path-traversal template rejected"
 fi
-if HOME="$H" python3 "$UC" set mode.template ".hidden" --scope global 2>/dev/null; then
+if HOME="$H" python3 "$UC" set mode.templates ".hidden" --scope global 2>/dev/null; then
   fail "dot-prefix template should be rejected"
 else
   ok "dot-prefix template rejected"
+fi
+# Deprecated alias path applies the same guard.
+if HOME="$H" python3 "$UC" set mode.template "../evil" --scope global 2>/dev/null; then
+  fail "traversal via deprecated mode.template should be rejected"
+else
+  ok "traversal via deprecated alias rejected"
 fi
 if HOME="$H" python3 "$UC" set persona.scope elsewhere --scope global 2>/dev/null; then
   fail "invalid persona scope should be rejected"
@@ -175,12 +189,12 @@ echo "9. show subcommand"
 
 H=$(sandbox_home)
 T=$(make_project)
-HOME="$H" python3 "$UC" setup --scope global --worktrees on --template gstack > /dev/null
+HOME="$H" python3 "$UC" setup --scope global --worktrees on --templates gstack > /dev/null
 HOME="$H" python3 "$UC" set mode.worktrees false --scope project --project "$T" > /dev/null
 
 EFFECTIVE=$(HOME="$H" python3 "$UC" show --project "$T")
 assert_contains "$EFFECTIVE" '"worktrees": false' "effective shows project override"
-assert_contains "$EFFECTIVE" '"template": "gstack"' "effective includes global template"
+assert_contains "$EFFECTIVE" '"gstack"' "effective includes global templates"
 
 GLOBAL_ONLY=$(HOME="$H" python3 "$UC" show --scope global)
 assert_contains "$GLOBAL_ONLY" '"worktrees": true' "global scope shows true"
