@@ -134,6 +134,12 @@ When done: `python3 -c "import json; json.dump({'status':'done','summary':'...'}
 
 If you discover an out-of-scope issue, log it:
   `python3 "$SCRIPT_DIR/scripts/backlog.py" add "$(pwd)" "Title" "Detail" worker`
+
+Never write summary / writeup / handoff `.md` files at the repo root. Only
+CLAUDE.md / AGENTS.md / README.md (and equivalents) belong there. Put any
+markdown you produce under the project's existing `docs/` convention
+(fallback: `docs/migrations/YYYY-MM-DD-<topic>/`). If the direction does
+not ask for a markdown writeup, do not create one.
 ```
 
 ## Boundaries
@@ -141,6 +147,14 @@ If you discover an out-of-scope issue, log it:
 <!-- AUTO:TEMPLATE_BLOCK -->
 - If a worker can't make progress on a direction twice, move on.
 - Keep going until iterations are used up or the direction is achieved.
+- **Never write summary / writeup / handoff / report `.md` files at the repo root.**
+  Only standard entry points (CLAUDE.md, AGENTS.md, GEMINI.md, README.md, and the
+  like) belong there. Place sprint/migration/session writeups under an existing
+  `docs/` convention — default to `docs/migrations/YYYY-MM-DD-<topic>/` if the
+  project has none. `.autonomous/` is reserved for skill-maintained state
+  (sprint-prompts, comms, JSON summaries); do NOT put human-facing markdown there
+  either. **Include this constraint in your worker prompt whenever the direction
+  implies producing a markdown artefact.**
 
 ## Begin
 
