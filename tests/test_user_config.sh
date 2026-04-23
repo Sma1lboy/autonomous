@@ -398,4 +398,97 @@ print('ok')
 assert_eq "$(cat /tmp/schema-check.out)" "ok" "every config key is documented in schema"
 rm -f /tmp/schema-check.out
 
+# ── 16. mode.profile ────────────────────────────────────────────────────
+
+echo ""
+echo "16. mode.profile — default value"
+
+H=$(sandbox_home)
+HOME="$H" python3 "$UC" setup --scope global --worktrees off --careful off > /dev/null
+PROFILE=$(HOME="$H" python3 "$UC" get mode.profile)
+assert_eq "$PROFILE" "default" "default profile is 'default' when setup omits --profile"
+
+echo ""
+echo "17. mode.profile — setup --profile=dev persists"
+
+H=$(sandbox_home)
+HOME="$H" python3 "$UC" setup --scope global --profile dev > /dev/null
+PROFILE=$(HOME="$H" python3 "$UC" get mode.profile)
+assert_eq "$PROFILE" "dev" "setup --profile=dev writes 'dev'"
+
+echo ""
+echo "18. mode.profile — invalid value rejected"
+
+H=$(sandbox_home)
+set +e
+HOME="$H" python3 "$UC" setup --scope global --profile bogus 2>/tmp/profile-err
+RC=$?
+set -e
+assert_eq "$RC" "2" "argparse rejects --profile=bogus with exit code 2"
+assert_contains "$(cat /tmp/profile-err)" "invalid choice" "argparse error mentions invalid choice"
+rm -f /tmp/profile-err
+
+echo ""
+echo "19. mode.profile — 'set' command validates enum"
+
+H=$(sandbox_home)
+HOME="$H" python3 "$UC" setup --scope global --worktrees off --careful off > /dev/null
+set +e
+HOME="$H" python3 "$UC" set mode.profile bogus 2>/tmp/profile-err
+RC=$?
+set -e
+if [ "$RC" = "0" ]; then
+  fail "set mode.profile=bogus unexpectedly succeeded"
+else
+  ok "set mode.profile=bogus fails (rc=$RC)"
+fi
+assert_contains "$(cat /tmp/profile-err)" "invalid profile" "error message mentions invalid profile"
+rm -f /tmp/profile-err
+
+echo ""
+echo "20. mode.profile=dev force-enables worktrees in effective config"
+
+H=$(sandbox_home)
+# Explicitly write worktrees=off, then flip profile to dev — the safety
+# rail in load_effective() must override worktrees back to on.
+HOME="$H" python3 "$UC" setup --scope global --worktrees off --careful off --profile dev > /dev/null
+WT=$(HOME="$H" python3 "$UC" get mode.worktrees)
+assert_eq "$WT" "true" "dev profile force-enables worktrees even when config said off"
+
+# Sanity: default profile with worktrees=off stays off
+H=$(sandbox_home)
+HOME="$H" python3 "$UC" setup --scope global --worktrees off --careful off --profile default > /dev/null
+WT=$(HOME="$H" python3 "$UC" get mode.worktrees)
+assert_eq "$WT" "false" "default profile does NOT force-enable worktrees"
+
+echo ""
+echo "21. AUTONOMOUS_MODE_PROFILE env override"
+
+H=$(sandbox_home)
+HOME="$H" python3 "$UC" setup --scope global --worktrees off --careful off --profile default > /dev/null
+PROFILE=$(HOME="$H" AUTONOMOUS_MODE_PROFILE=dev python3 "$UC" get mode.profile)
+assert_eq "$PROFILE" "dev" "env AUTONOMOUS_MODE_PROFILE=dev overrides config"
+
+# And the env-driven dev profile still force-enables worktrees
+WT=$(HOME="$H" AUTONOMOUS_MODE_PROFILE=dev python3 "$UC" get mode.worktrees)
+assert_eq "$WT" "true" "env-driven dev profile force-enables worktrees via load_effective"
+
+# Invalid env value is ignored (falls through to config's 'default')
+PROFILE=$(HOME="$H" AUTONOMOUS_MODE_PROFILE=bogus python3 "$UC" get mode.profile)
+assert_eq "$PROFILE" "default" "invalid env value ignored, falls back to config"
+
+echo ""
+echo "22. Schema documents mode.profile enum"
+
+python3 -c "
+import json
+s = json.load(open('$SCHEMA_FILE'))
+prof = s['properties']['mode']['properties']['profile']
+assert prof['enum'] == ['default', 'dev'], f'enum mismatch: {prof[\"enum\"]}'
+assert prof['default'] == 'default', f'default mismatch: {prof[\"default\"]}'
+print('ok')
+" > /tmp/profile-schema.out
+assert_eq "$(cat /tmp/profile-schema.out)" "ok" "schema has mode.profile with enum [default,dev]"
+rm -f /tmp/profile-schema.out
+
 print_results

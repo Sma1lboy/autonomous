@@ -26,6 +26,18 @@ echo "CONFIG_STATUS=$CONFIG_STATUS"
 eval "$(python3 "$SCRIPT_DIR/scripts/user-config.py" experimental "$(pwd)" 2>/dev/null || true)"
 python3 "$SCRIPT_DIR/scripts/persona.py" "$(pwd)" >/dev/null 2>&1
 python3 "$SCRIPT_DIR/scripts/startup.py" "$(pwd)"
+
+# Conductor profile. "dev" appends modes/dev/prompt.md (permission to fix
+# bugs in the autonomous-skill tool itself). Default is a no-op.
+MODE_PROFILE=$(python3 "$SCRIPT_DIR/scripts/user-config.py" get mode.profile "$(pwd)" 2>/dev/null || echo "default")
+export AUTONOMOUS_SKILL_DIR="$SCRIPT_DIR"
+if [ "$MODE_PROFILE" = "dev" ] && [ -f "$SCRIPT_DIR/modes/dev/prompt.md" ]; then
+  echo ""
+  echo "=== DEV MODE ADDENDUM (mode.profile=dev) ==="
+  cat "$SCRIPT_DIR/modes/dev/prompt.md"
+  echo "=== END DEV MODE ADDENDUM ==="
+  echo ""
+fi
 ```
 
 If the startup block outputs `UPDATE_AVAILABLE <old> <new>`, tell the user:
