@@ -4,6 +4,9 @@ All notable changes to autonomous-skill are documented here.
 
 ## [Unreleased]
 
+
+## [0.9.0] — 2026-04-23
+
 ### Added
 - Dev mode (`mode.profile=dev`) — opt-in conductor profile that appends `modes/dev/prompt.md` to the Conductor startup, giving it permission to fix bugs in the autonomous-skill tool itself. Flow: isolated worktree (never edits the live install) → TDD fix → verification gate (`bash tests/test_*.sh` + `python3 -m compileall` + smoke-test) → `gh pr create` for human review (never auto-merge). Dev mode force-enables `mode.worktrees` as a safety rail so a broken fix can't corrupt `~/.claude/skills/autonomous-skill`.
 - `scripts/user-config.py`: `mode.profile` config key with enum `["default","dev"]`, default `"default"`; `--profile` flag on `setup`; `AUTONOMOUS_MODE_PROFILE` env override; `load_effective()` rail that force-sets `mode.worktrees=true` when profile=dev.
@@ -11,8 +14,6 @@ All notable changes to autonomous-skill are documented here.
 - `autonomous/SKILL.md` Startup: reads `mode.profile`, exports `AUTONOMOUS_SKILL_DIR=$SCRIPT_DIR`, and emits the addendum wrapped in `=== DEV MODE ADDENDUM ===` markers when profile=dev (silent otherwise).
 - `tests/test_dev_mode.sh` (19 tests): prompt content markers, Startup emission on/off by profile, env-override path, `AUTONOMOUS_SKILL_DIR` export.
 - `tests/test_user_config.sh` (+26 tests): `mode.profile` default/set/invalid/env-override/force-worktrees/schema coverage.
-
-### Changed
 
 
 ## [0.8.0] — 2026-04-23
