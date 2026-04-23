@@ -84,9 +84,9 @@ echo ""
 echo "=== COMMITS ==="
 git log main.."$QUICKDO_BRANCH" --oneline --no-merges 2>/dev/null || git log --oneline -10
 echo ""
-if [ -f .autonomous/sprint-summary.json ]; then
+if [ -f .autonomous/sprint-1-summary.json ]; then
   echo "=== SUMMARY ==="
-  cat .autonomous/sprint-summary.json
+  cat .autonomous/sprint-1-summary.json
 fi
 ```
 

@@ -25,7 +25,7 @@ Design notes / known limits (V2 — experimental):
   in the wave. This keeps blame attribution simple ("sprint 3 is stuck"
   rather than "sprint 1, 3, and 5 each blocked something else").
 - Worker failure != merge failure. A worker can time out / crash (no
-  sprint-summary.json) and we still try to merge whatever commits it left
+  sprint-N-summary.json) and we still try to merge whatever commits it left
   on its branch before declaring it incomplete.
 - Cap via `experimental.max_parallel_sprints` (default 3). Honored strictly.
 """

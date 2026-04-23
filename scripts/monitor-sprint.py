@@ -49,7 +49,6 @@ def main(argv: list[str]) -> int:
 
     project = Path(args.project_dir).resolve()
     summary_file = project / ".autonomous" / f"sprint-{args.sprint_num}-summary.json"
-    generic = project / ".autonomous" / "sprint-summary.json"
 
     window_name = f"sprint-{args.sprint_num}"
     while True:
@@ -58,19 +57,9 @@ def main(argv: list[str]) -> int:
             print(f"=== SPRINT {args.sprint_num} COMPLETE ===")
             print(summary_file.read_text())
             break
-        if generic.exists():
-            summary_file.write_text(generic.read_text())
-            generic.unlink(missing_ok=True)
-            tmux_kill(window_name)
-            print(f"=== SPRINT {args.sprint_num} COMPLETE ===")
-            print(summary_file.read_text())
-            break
         if tmux_available():
             if not tmux_has_window(window_name):
                 print(f"=== SPRINT {args.sprint_num} WINDOW CLOSED ===")
-                if generic.exists():
-                    summary_file.write_text(generic.read_text())
-                    generic.unlink(missing_ok=True)
                 break
         time.sleep(8)
     return 0

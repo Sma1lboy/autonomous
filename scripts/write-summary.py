@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write sprint-summary.json from git state."""
+"""Write sprint-N-summary.json from git state."""
 from __future__ import annotations
 
 import argparse
@@ -23,11 +23,15 @@ def git_commits(project: Path, limit: int = 5) -> list[str]:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Write sprint summary JSON")
     parser.add_argument("project_dir")
+    parser.add_argument("sprint_num", type=int)
     parser.add_argument("status", choices=["complete", "partial", "blocked"])
     parser.add_argument("summary")
     parser.add_argument("iterations", nargs="?", type=int, default=1)
     parser.add_argument("direction_complete", nargs="?", default="true")
     args = parser.parse_args(argv[1:])
+
+    if args.sprint_num <= 0:
+        parser.error(f"sprint_num must be > 0, got: {args.sprint_num}")
 
     project = Path(args.project_dir).resolve()
     commits = git_commits(project)
@@ -38,7 +42,7 @@ def main(argv: list[str]) -> int:
         "iterations_used": args.iterations,
         "direction_complete": args.direction_complete.lower() == "true",
     }
-    target = project / ".autonomous" / "sprint-summary.json"
+    target = project / ".autonomous" / f"sprint-{args.sprint_num}-summary.json"
     target.parent.mkdir(exist_ok=True)
     target.write_text(json.dumps(summary, indent=2))
     print(json.dumps(summary, indent=2))
