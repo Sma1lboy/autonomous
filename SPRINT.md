@@ -109,7 +109,7 @@ You have a specific direction for this sprint. Focus on it.
    Write the sprint summary:
 
    ```bash
-   python3 "$SCRIPT_DIR/scripts/write-summary.py" "$(pwd)" "complete" "2-3 sentence summary here"
+   python3 "$SCRIPT_DIR/scripts/write-summary.py" "$(pwd)" "$SPRINT_NUMBER" "complete" "2-3 sentence summary here"
    ```
 
 ## Worker Prompt

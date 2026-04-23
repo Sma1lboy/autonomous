@@ -184,18 +184,15 @@ assert_contains "$OUTPUT" "complete" "prints summary content"
 
 # ═══════════════════════════════════════════════════════════════════════════
 echo ""
-echo "9. monitor-sprint.py — renames generic summary to numbered"
+echo "9. monitor-sprint.py — only polls the numbered file (no generic fallback)"
 
-T=$(new_tmp)
-mkdir -p "$T/.autonomous"
-cat > "$T/.autonomous/sprint-summary.json" << 'EOF'
-{"status":"complete","summary":"via generic","commits":[],"direction_complete":true}
-EOF
-
-OUTPUT=$(python3 "$MONITOR" "$T" "2" 2>/dev/null)
-assert_contains "$OUTPUT" "SPRINT 2 COMPLETE" "detects generic summary and renames"
-assert_file_exists "$T/.autonomous/sprint-2-summary.json" "numbered file created"
-assert_file_not_exists "$T/.autonomous/sprint-summary.json" "generic file removed"
+# After the sprint-summary contract change, workers write directly to
+# sprint-N-summary.json via write-summary.py. monitor-sprint.py must NOT
+# fall back to the old generic 'sprint-summary.json' name — a lingering
+# generic file from a prior version would otherwise poison the next sprint.
+SCRIPT_CONTENT=$(cat "$MONITOR")
+assert_contains "$SCRIPT_CONTENT" 'f"sprint-{args.sprint_num}-summary.json"' "monitor polls the numbered file"
+assert_not_contains "$SCRIPT_CONTENT" '"sprint-summary.json"' "monitor does not reference the generic filename"
 
 # ═══════════════════════════════════════════════════════════════════════════
 echo ""
@@ -222,7 +219,7 @@ else
 fi
 
 KILL_COUNT=$(grep -c "tmux_kill(window_name)" "$MONITOR" || true)
-assert_ge "$KILL_COUNT" "2" "tmux_kill called in both completion branches"
+assert_eq "$KILL_COUNT" "1" "tmux_kill called exactly once on summary-file completion"
 
 # ═══════════════════════════════════════════════════════════════════════════
 print_results
