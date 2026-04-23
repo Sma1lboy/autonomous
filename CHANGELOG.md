@@ -4,6 +4,9 @@ All notable changes to autonomous-skill are documented here.
 
 ## [Unreleased]
 
+
+## [0.8.0] — 2026-04-23
+
 ### Fixed
 - Sprint summary contract: worker now writes directly to `.autonomous/sprint-<N>-summary.json` instead of the generic `sprint-summary.json` that `monitor-sprint.py` had to rename. Eliminates the "stale generic file poisons the next sprint" bug class. `write-summary.py` takes a required `sprint_num` argument; `SPRINT.md` passes `$SPRINT_NUMBER`; `monitor-sprint.py` only polls the numbered file; `quickdo/SKILL.md` reads `sprint-1-summary.json`. `conductor-state.py init` still deletes any leftover generic file as an upgrade safety net.
 
