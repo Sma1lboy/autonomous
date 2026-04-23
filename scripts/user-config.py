@@ -67,6 +67,7 @@ SCHEMA_URL = (
 ENV_OVERRIDES: dict[str, str] = {
     "mode.worktrees": "AUTONOMOUS_SPRINT_WORKTREES",
     "mode.careful_hook": "AUTONOMOUS_WORKER_CAREFUL",
+    "mode.profile": "AUTONOMOUS_MODE_PROFILE",
 }
 
 BOOL_KEYS = {
@@ -75,9 +76,13 @@ BOOL_KEYS = {
     "experimental.vira_worktree",
     "experimental.parallel_sprints",
 }
-STRING_KEYS = {"persona.scope"}
+STRING_KEYS = {"persona.scope", "mode.profile"}
 LIST_KEYS = {"mode.templates"}
 VALID_PERSONA_SCOPES = {"global", "project"}
+# Profile is a one-line switch that tells SKILL.md whether to inject the
+# dev-mode addendum. Extend cautiously — each new profile should have a
+# matching modes/<name>/prompt.md or it's a no-op.
+VALID_PROFILES = {"default", "dev"}
 
 # Experimental keys surface a stderr warning on every `check` so the user
 # never forgets they're running unstable code. Extend this set when adding
@@ -92,6 +97,11 @@ DEFAULTS: dict[str, Any] = {
         "worktrees": False,
         "careful_hook": False,
         "templates": ["gstack"],
+        # "default" = normal conductor; "dev" = conductor may also fix
+        # bugs in the autonomous-skill tool itself via cross-repo PR flow.
+        # Dev mode force-enables worktrees (see load_effective) so a broken
+        # fix can't brick the live install.
+        "profile": "default",
     },
     "persona": {
         "scope": "global",
@@ -252,6 +262,22 @@ def load_effective(project: Path | None) -> dict[str, Any]:
             if legacy:
                 merged.setdefault("mode", {})["templates"] = [legacy]
 
+    # Env override for mode.profile — applied here (not only in cmd_get) so
+    # that the dev-mode force-worktrees rail below sees env overrides too.
+    # Other env overrides stay in cmd_get to avoid surprising callers that
+    # rely on load_effective returning persisted values only.
+    profile_env = os.environ.get("AUTONOMOUS_MODE_PROFILE")
+    if profile_env and profile_env in VALID_PROFILES:
+        merged.setdefault("mode", {})["profile"] = profile_env
+
+    # Dev-mode safety rail: force worktrees on. A broken fix from the
+    # dev-mode conductor must not be able to corrupt the live install; the
+    # worktree isolates edits on a separate branch and a separate path.
+    # User can still override via AUTONOMOUS_SPRINT_WORKTREES=false, since
+    # bool env overrides are applied at cmd_get time (explicit escape hatch).
+    if merged.get("mode", {}).get("profile") == "dev":
+        merged.setdefault("mode", {})["worktrees"] = True
+
     return merged
 
 
@@ -303,6 +329,10 @@ def _coerce_value(key: str, raw: str) -> Any:
         if raw not in VALID_PERSONA_SCOPES:
             die(f"invalid scope: {raw} (use global|project)")
         return raw
+    if key == "mode.profile":
+        if raw not in VALID_PROFILES:
+            die(f"invalid profile: {raw} (use {'|'.join(sorted(VALID_PROFILES))})")
+        return raw
     if key in STRING_KEYS:
         return raw
     die(f"unknown key: {key}")
@@ -324,9 +354,19 @@ def cmd_get(args: argparse.Namespace) -> None:
     # Env override wins
     env_name = ENV_OVERRIDES.get(key)
     if env_name and env_name in os.environ and os.environ[env_name]:
-        parsed = _parse_bool_env(os.environ[env_name])
-        if parsed is not None:
-            print("true" if parsed else "false")
+        raw = os.environ[env_name]
+        if key in BOOL_KEYS:
+            parsed = _parse_bool_env(raw)
+            if parsed is not None:
+                print("true" if parsed else "false")
+                return
+        elif key == "mode.profile":
+            if raw in VALID_PROFILES:
+                print(raw)
+                return
+            # Invalid env value — ignore, fall through to config
+        elif key in STRING_KEYS:
+            print(raw)
             return
 
     # Deprecated read alias: `mode.template` returns the first element of
@@ -412,6 +452,8 @@ def cmd_setup(args: argparse.Namespace) -> None:
         die(f"invalid --worktrees: {args.worktrees}")
     if args.careful and careful is None:
         die(f"invalid --careful: {args.careful}")
+    if args.profile and args.profile not in VALID_PROFILES:
+        die(f"invalid --profile: {args.profile} (use {'|'.join(sorted(VALID_PROFILES))})")
 
     def mutate(cfg: dict[str, Any]) -> None:
         if worktrees is not None:
@@ -424,6 +466,8 @@ def cmd_setup(args: argparse.Namespace) -> None:
             # Legacy alias: singular --template → one-item templates array
             single = _coerce_value("mode.templates", args.template)
             _set_nested(cfg, "mode.templates", single)
+        if args.profile:
+            _set_nested(cfg, "mode.profile", args.profile)
         if args.persona_scope:
             if args.persona_scope not in VALID_PERSONA_SCOPES:
                 die(f"invalid --persona-scope: {args.persona_scope}")
@@ -578,6 +622,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         choices=list(VALID_PERSONA_SCOPES),
         help="where OWNER.md lives (default global)",
+    )
+    p_setup.add_argument(
+        "--profile",
+        default=None,
+        choices=sorted(VALID_PROFILES),
+        help="conductor profile: 'default' or 'dev' "
+        "(dev unlocks self-improvement flow + force-enables worktrees)",
     )
     p_setup.set_defaults(func=cmd_setup)
 

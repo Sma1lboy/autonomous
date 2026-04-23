@@ -66,6 +66,7 @@ Conductor (SKILL.md, user's CC session)
 - `explore-ralph-loop/SKILL.md` — Explore Ralph Loop: detects toolchain, captures execute-verify-fix patterns as reusable skills
 - `scripts/register-ralph-loops.sh` — Dynamic scanner: symlinks ralph-loop-skills/ to ~/.claude/skills/
 - `ralph-loop-skills/` — Generated loop skills (gitignored, per-user)
+- `modes/dev/prompt.md` — Dev-mode addendum appended to the Conductor prompt when `mode.profile=dev`. Permits the Conductor to fix bugs in autonomous-skill itself via an isolated worktree, bash-test + smoke-test verification gate, and a human-review PR (no auto-merge). Dev mode force-enables `mode.worktrees` as a safety rail. Enable via `python3 scripts/user-config.py setup --profile dev` or env `AUTONOMOUS_MODE_PROFILE=dev`.
 
 ## How it works
 
@@ -163,7 +164,7 @@ To add a new template: create `templates/<name>/rules.json` with `allows` and
 
 ## Testing
 
-739 tests across 14 suites, all pure bash:
+785 tests across 15 suites, all pure bash:
 
 ```bash
 bash tests/test_conductor.sh    # 99 tests: state management, phase transitions, exploration, stale cleanup, input validation, CLI help
@@ -178,8 +179,9 @@ bash tests/test_timeline.sh     # 63 tests: append-only JSONL log, filters, cond
 bash tests/test_careful_hook.sh # 97 tests: PreToolUse hook pattern matching, adversarial bypasses, dispatch integration, window_name validation
 bash tests/test_checkpoint.sh   # 70 tests: save/list/latest/show, path-traversal rejection, YAML injection resistance, type-unsafe JSON, non-UTF8
 bash tests/test_worktree.sh     # 65 tests: per-sprint worktree CRUD, symlink escape refusal, branch validation, registered-worktree guard, merge-sprint --keep-branch
-bash tests/test_user_config.sh  # 62 tests: config precedence, legacy migration, malformed config, experimental flags + warnings, init command, $schema reference, schema file integrity
+bash tests/test_user_config.sh  # 88 tests: config precedence, legacy migration, malformed config, experimental flags + warnings, init command, $schema reference, schema file integrity, mode.profile (default/dev enum + validation + force-worktrees rail + env override)
 bash tests/test_parallel_sprint.sh # 27 tests: V2 parallel orchestrator — gating, validation, E2E wave dispatch + serial merge + worktree teardown, max-parallel sources
+bash tests/test_dev_mode.sh     # 19 tests: modes/dev/prompt.md content + SKILL.md Startup addendum emission (dev vs default profile, env override, AUTONOMOUS_SKILL_DIR export)
 python3 -m compileall scripts   # quick syntax check
 ```
 
