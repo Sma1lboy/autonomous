@@ -118,6 +118,7 @@ def usage() -> None:
               phase <project>
               explore-pick <project>
               explore-score <project> <dimension> <score>
+              set-phase <project> <phase>
               lock <project>
               unlock <project>
 
@@ -259,20 +260,11 @@ def cmd_sprint_end(manager: StateManager, args: list[str]) -> None:
         state["consecutive_zero_commits"] = 0
 
     if state.get("phase") == "directed":
-        sprint_num = len(sprints)
-        max_directed = state.get("max_directed_sprints", 7)
-        consec_complete = state.get("consecutive_complete", 0)
-        consec_zero = state.get("consecutive_zero_commits", 0)
-        has_commits = any(len(s.get("commits", [])) > 0 for s in sprints)
-        if sprint_num >= max_directed:
-            state["phase"] = "exploring"
-            state["phase_transition_reason"] = "max_directed_sprints reached"
-        elif direction_done and has_commits and consec_complete >= 2:
-            state["phase"] = "exploring"
-            state["phase_transition_reason"] = "direction_complete confirmed"
-        elif consec_zero >= 2:
-            state["phase"] = "exploring"
-            state["phase_transition_reason"] = "consecutive_zero_commits"
+        # Under the roadmap architecture, phase transitions from 'directed'
+        # to 'exploring' are managed manually by the Conductor using `set-phase`
+        # when ROADMAP.md is depleted. Auto-transitions have been removed to
+        # prevent prematurely aborting a multi-sprint roadmap.
+        pass
 
     manager.write_state(state)
     new_phase = state.get("phase", "directed")
@@ -363,6 +355,21 @@ def cmd_explore_score(manager: StateManager, args: list[str]) -> None:
     print("ok")
 
 
+def cmd_set_phase(manager: StateManager, args: list[str]) -> None:
+    if len(args) < 1:
+        _die("Usage: conductor-state.py set-phase <project-dir> <phase>")
+    new_phase = args[0]
+    valid_phases = {"directed", "exploring"}
+    if new_phase not in valid_phases:
+        _die(f"unknown phase: {new_phase} (valid: {' '.join(valid_phases)})")
+    
+    state = manager.read_state_strict()
+    state["phase"] = new_phase
+    state["phase_transition_reason"] = "manual override"
+    manager.write_state(state)
+    print(new_phase)
+
+
 def cmd_lock(manager: StateManager) -> None:
     manager.acquire_lock()
     print(f"locked (PID {os.getpid()})")
@@ -398,13 +405,15 @@ def main(argv: list[str]) -> int:
             cmd_explore_pick(manager)
         elif cmd == "explore-score":
             cmd_explore_score(manager, args)
+        elif cmd == "set-phase":
+            cmd_set_phase(manager, args)
         elif cmd == "lock":
             cmd_lock(manager)
         elif cmd == "unlock":
             cmd_unlock(manager)
         else:
             _die(
-                f"Unknown command: {cmd}. Use: init|read|sprint-start|sprint-end|phase|explore-pick|explore-score|lock|unlock"
+                f"Unknown command: {cmd}. Use: init|read|sprint-start|sprint-end|phase|explore-pick|explore-score|set-phase|lock|unlock"
             )
     finally:
         manager.release_lock()

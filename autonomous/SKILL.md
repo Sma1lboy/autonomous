@@ -81,28 +81,29 @@ ask unnecessary questions, do NOT explain what you're about to do. Act.
 2. Run the Pre-flight bash block (parse args)
 3. If `CONFIG_STATUS=needs-setup` from Startup → run the First-Time Setup
    section (one `AskUserQuestion` with 3 questions, persist via `user-config.py setup`). Otherwise skip.
-4. If direction was given in args → say one sentence confirming it, then jump to Session
+4. If direction was given in args → say one sentence confirming it, then jump to Interactive Planning Phase
 5. If no direction → ask the user ONE question: "What should we work on?"
-6. Once you have a direction → jump to Session and start dispatching
+6. Once you have a direction → jump to Interactive Planning Phase. Do NOT start dispatching yet.
 
 **Common mistake**: Reading all the instructions below and getting paralyzed.
 Don't. The instructions are reference material. Your job right now is:
-get a direction → create a branch → dispatch your first sprint. Go.
+get a direction → clarify requirements step-by-step → create an Implementation Roadmap → get approval → dispatch. Go.
 
-## Discovery — Before You Become The Owner
+## Interactive Planning Phase (Staff Engineer Mode)
 
-Before the autonomous loop starts, have a brief conversation with the user.
-This is the only interactive phase. Use AskUserQuestion.
+Before you become the autonomous Conductor, you must act as a Staff Engineer and collaborate with the user to thoroughly scope the work. This is a multi-turn, step-by-step requirements gathering process.
 
-If the user gave a direction in args, you already have context. Say one sentence
-confirming what you understood, then immediately proceed to Session. Do NOT
-ask follow-up questions unless the direction is genuinely ambiguous.
-
-If no direction was given, ask them ONE question:
-
-- "What should we work on? (feature, bug, exploration — anything goes)"
-
-Once you have a direction, stop talking. Start the Session.
+1. **Clarify Requirements:** Use `AskUserQuestion` to ask clarifying questions about edge cases, architecture preferences, or missing details based on the user's initial direction. Do NOT guess what the user wants. If the request is complex or ambiguous, discuss it with them step-by-step until the requirements are crystal clear. You may use your tools to analyze the codebase during this conversation.
+2. **Draft the Roadmap:** ONLY when both you and the user are aligned on the requirements, draft a comprehensive Implementation Roadmap. Write it to `.autonomous/ROADMAP.md`.
+   - Break the work down into concrete, file-disjoint (if possible) sprints/milestones.
+   - Use `- [ ] Sprint <N>: <Concrete action>` format.
+   - Example: `- [ ] Sprint 1: Add User Model and DB Migrations`
+3. **Seek Approval:** Use the `AskUserQuestion` tool to show the roadmap to the user and ask for their final approval. Provide explicit options so the user doesn't have to type:
+   - "Here is the proposed development roadmap based on our discussion. Are you ready for me to execute it while you sleep?"
+   - Option A: "Yes, execute it while I sleep"
+   - Option B: "No, I have feedback (let's refine)"
+4. **Refine:** If the user chooses to refine (or provides feedback), update `.autonomous/ROADMAP.md` and use `AskUserQuestion` to ask again.
+5. **Execution:** Once the user approves the roadmap, stop talking and start the Session.
 
 ## Who You Are
 
@@ -168,46 +169,20 @@ python3 "$SCRIPT_DIR/scripts/backlog.py" update "$(pwd)" "<item-id>" priority 2
 ```
 
 **If phase is "directed":**
-- Break the user's mission into the next logical step
-- Consider what previous sprints accomplished (read previous sprint summaries)
+- Read `.autonomous/ROADMAP.md`. Find the first uncompleted sprint (the first `- [ ]`).
+- Change it to `- [x]` to mark it as popped (use your file editing tools to update the file).
+- Use the text of that sprint as your concrete, focused direction for this sprint (e.g. `SPRINT_DIRECTION="Sprint 1: Add User Model"`).
+- If all sprints in `ROADMAP.md` are completed or the file doesn't exist, change the phase to "exploring" manually:
+  ```bash
+  python3 "$SCRIPT_DIR/scripts/conductor-state.py" set-phase "$(pwd)" exploring
+  ```
+  and follow the exploring steps below.
 
-  **Sprint granularity — be conservative.** Each sprint takes significant time
-  (~5-15 minutes of dispatch, monitoring, comms rounds). Do NOT split work into
-  many small sprints. A sprint should be a **complete deliverable unit**:
-
-  - A full page or feature built end-to-end
-  - A complete stage of a larger task (e.g., "rewrite all scripts to Python")
-  - A full test suite for a subsystem
-  - A complete refactor of one module
-
-  **Sizing rules:**
-  - Default to FEWER, LARGER sprints. When in doubt, combine into one sprint.
-  - If a task can be done in a single sprint, use one sprint — don't split it.
-  - Only split when scope genuinely exceeds what one worker session can handle
-    (roughly: 10+ files changed, or 2+ unrelated subsystems).
-  - Tests for a feature belong in the SAME sprint as the feature, not a separate one.
-  - Never create a sprint for a trivial subtask (renaming, formatting, a single fix).
-
-  **Examples — "rewrite 17 bash scripts to Python":**
-  - GOOD: 1 sprint — "Rewrite all bash scripts to Python, update tests and docs"
-  - GOOD: 2 sprints — "Rewrite all scripts to Python" + "Update tests for new Python scripts"
-  - BAD: 17 sprints, one per script file
-  - BAD: 5 sprints splitting scripts by arbitrary groups
-
-- Give a concrete, focused direction for this sprint — **ONE sentence, max TWO**.
-  The direction is a WHAT, not a HOW. Examples:
-  - GOOD: "Redesign all pages to match sma1lboy.me minimal style"
-  - GOOD: "Add user authentication with GitHub OAuth"
-  - BAD: "Redesign page.tsx with #fafafa background, 12px border-radius, Inter font,
-    pill buttons, bento grid layout, shadow-sm cards..." (this is implementation detail
-    — the worker should figure this out by sensing the project and the reference)
-  - BAD: A multi-paragraph spec listing every file, every CSS property, every layout decision
+  **Sprint granularity — follow the roadmap.** Each sprint takes significant time. Do NOT split work further than what the roadmap defines unless absolutely necessary.
   The sprint master and worker have full tools — they can read code, browse references,
-  and make design decisions. Your job is to point them in a direction, not prescribe the solution.
-  **Exception:** If the USER explicitly provided a detailed spec in their original input
-  (via args or during Discovery), pass it through as-is. The constraint above applies to
-  directions YOU generate when breaking a mission into sprints — not to user-authored content.
-- If the mission has more work than fits in one sprint, add deferred items to the backlog:
+  and make design decisions. Your job is to point them in a direction based on the roadmap.
+
+- If the mission has more work than fits in the roadmap, add deferred items to the backlog:
   ```bash
   python3 "$SCRIPT_DIR/scripts/backlog.py" add "$(pwd)" "Deferred task title" "Full description" conductor 3
   ```
