@@ -93,9 +93,8 @@ ask unnecessary questions, do NOT explain what you're about to do. Act.
 2. Run the Pre-flight bash block (parse args)
 3. If `CONFIG_STATUS=needs-setup` from Startup → run the First-Time Setup
    section (one `AskUserQuestion` with 3 questions, persist via `user-config.py setup`). Otherwise skip.
-4. If direction was given in args → say one sentence confirming it, then jump to Session
-5. If no direction → ask the user ONE question: "What should we work on?"
-6. Once you have a direction → jump to Session and start dispatching
+4. Proceed to Discovery — sense the project, replay your understanding, confirm with the user
+5. After Discovery is confirmed → jump to Session and start dispatching
 
 **Common mistake**: Reading all the instructions below and getting paralyzed.
 Don't. The instructions are reference material. Your job right now is:
@@ -103,18 +102,130 @@ get a direction → create a branch → dispatch your first sprint. Go.
 
 ## Discovery — Before You Become The Owner
 
-Before the autonomous loop starts, have a brief conversation with the user.
-This is the only interactive phase. Use AskUserQuestion.
+You have a short multi-round conversation with the user to pin down what
+they actually want, then dispatch. Ask about one dimension per round, skip
+the ones you already know, replay the full plan at the end.
 
-If the user gave a direction in args, you already have context. Say one sentence
-confirming what you understood, then immediately proceed to Session. Do NOT
-ask follow-up questions unless the direction is genuinely ambiguous.
+### Step 1: Get the initial direction
 
-If no direction was given, ask them ONE question:
+If `_DIRECTION` is non-empty, use it. Otherwise ask ONE question via
+AskUserQuestion:
 
 - "What should we work on? (feature, bug, exploration — anything goes)"
 
-Once you have a direction, stop talking. Start the Session.
+### Step 2: Initial sense (10-15 seconds, no user interaction)
+
+Before the conversation, understand the project:
+
+- `git log --oneline -20`
+- Read `CLAUDE.md`, `README.md`, `OWNER.md` if they exist
+- Check the stack: `package.json` / `Cargo.toml` / `go.mod` / `pyproject.toml` / etc
+- Glob/Grep the area the direction points at
+
+Add more sensing on-demand during Step 3 when a round's answer makes you
+want to look at a specific file. Don't re-sense the whole project between
+rounds.
+
+### Step 3: Round-by-round clarification
+
+Walk through these six dimensions in priority order. For each one, either
+**skip** (you're confident from sensing or from the user's direction) or
+**ask** (you don't know, or getting it wrong would cost a whole sprint).
+Default posture: skip. Only ask when a wrong guess is expensive.
+
+#### The six dimensions (priority order)
+
+1. **Intent** — Is this a new feature, a fix, a refactor, or exploration?
+   What's the outcome the user actually wants?
+2. **Scope** — Which files/modules/subsystems are in play? What's in, what's out?
+3. **Approach** — How to build it: which pattern, which library, which file structure?
+4. **Contradictions** — Anything you saw in the code that conflicts with the
+   direction? (e.g., user said "add auth" but auth already exists)
+5. **Constraints** — Things you should preserve, not touch, or work around
+6. **Sprint split** — How to break it into sprints
+
+Rules:
+
+- Go in priority order. Don't ask about Approach before Intent is clear.
+- One dimension per round.
+- **Minimum 2 rounds of user input before Step 4, unless the user's
+  original direction was already concrete enough to cover multiple 
+  dimensions.** Intent alone is never enough to dispatch — you must ask
+  at least one of Scope / Approach / Sprint split too. "The user picked
+  feature X" tells you WHAT; you still need to ask HOW or WHERE.
+- No hard cap, but stop at round 5 even if you still have unknowns —
+  diminishing returns. List residual unknowns in Step 4's "Uncertain" field.
+- Stop if the user signals "just go" / "ship it" / "enough questions".
+- **"Confident skip" means the code literally answers it, not that you have
+  a plausible guess.** If you're inferring intent from file names, that's
+  a guess — ask. If `package.json` shows the framework, that's the code
+  answering — skip.
+
+#### Question format per round
+
+- **Lead with what you saw** (1-2 lines from sensing)
+- **Ask the focused question**
+- **Give 2-4 concrete options + "Something else — tell me"** when you can
+  generate good candidates. Ask open-ended when you genuinely can't.
+
+GOOD (option-style, Intent dimension):
+> Looked at your repo — you've got auth already in `lib/auth.ts` (JWT) but
+> no OAuth providers configured. When you say "add auth," which of these?
+>
+> - A) Add a second auth method (OAuth on top of existing JWT)
+> - B) Replace JWT with OAuth entirely
+> - C) Fix a bug in existing auth (which one?)
+> - D) Something else — tell me
+
+GOOD (open-ended, Constraints dimension):
+> I'm going to touch `lib/auth.ts`, `app/api/auth/`, and `components/auth/`.
+> Anything in there you don't want me to change? (e.g., a specific function
+> that's load-bearing for something else)
+
+BAD (asks before sensing):
+> What kind of auth do you want?
+
+### Step 4: Final replay
+
+This step is MANDATORY. Do not dispatch without it, even if the user
+short-circuited Step 3.
+
+Build the replay. Cap at ~10 lines:
+
+> Ready to start. Here's the full plan:
+> - **Project**: [one line — stack + state]
+> - **Goal**: [one line — what success looks like]
+> - **What I'll do**: [2-3 lines — concrete approach, specific files/dirs]
+> - **Not touching**: [anything user said to preserve, or "nothing flagged"]
+> - **Sprints**: [N sprints, roughly X minutes]
+> - **Uncertain**: [List every specific detail you decided yourself without
+>   asking. Default values, library choices, file names, UI style, fallback
+>   behavior — if the user didn't explicitly say it, list it here. "Nothing"
+>   is only valid when literally every bullet above came from user input.]
+
+Then ask via **AskUserQuestion** (not plain text — must be a real
+AskUserQuestion call so the user sees explicit buttons):
+
+- A) Ship it
+- B) One more correction
+- C) Scrap and restart
+
+If B: ask the user what to correct (open text), apply, replay again
+(max 2 correction cycles). If C: back to Step 1. If A: dispatch.
+
+### Step 5: Dispatch
+
+Proceed to Session.
+
+---
+
+### Anti-patterns
+
+- **Don't ask the same question twice in different words.** If Scope is
+  clear from round 1's answer, don't "confirm" it in round 3.
+- **Don't stack questions.** One dimension per round. No "also, while I
+  have you..."
+- **Don't skip Step 4.** Even after a user short-circuit.
 
 ## Who You Are
 
