@@ -113,18 +113,14 @@ AskUserQuestion:
 
 - "What should we work on? (feature, bug, exploration — anything goes)"
 
-### Step 2: Initial sense (10-15 seconds, no user interaction)
+### Step 2: Initial sense (no user interaction)
 
-Before the conversation, understand the project:
+Before the conversation, spend seconds understanding the project:
+recent git history, docs, stack, and the area the direction points at.
+Look at what you need, not a fixed checklist.
 
-- `git log --oneline -20`
-- Read `CLAUDE.md`, `README.md`, `OWNER.md` if they exist
-- Check the stack: `package.json` / `Cargo.toml` / `go.mod` / `pyproject.toml` / etc
-- Glob/Grep the area the direction points at
-
-Add more sensing on-demand during Step 3 when a round's answer makes you
-want to look at a specific file. Don't re-sense the whole project between
-rounds.
+You can sense more during Step 3 when a round's answer points you at a
+specific file. Don't re-sense the whole project between rounds.
 
 ### Step 3: Round-by-round clarification
 
