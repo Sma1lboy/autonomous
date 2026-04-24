@@ -23,3 +23,5 @@ ralph-loop-skills/
 # Runtime state (per-session, never committed)
 .autonomous/
 .vercel
+
+scripts/__pycache__
