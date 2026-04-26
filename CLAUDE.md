@@ -30,8 +30,11 @@ Conductor (SKILL.md, user's CC session)
 - `scripts/parse-args.py` — Parse ARGS → _MAX_SPRINTS + _DIRECTION
 - `scripts/session-init.py` — Create session branch, init conductor state + backlog
 - `scripts/build-sprint-prompt.py` — Inline SPRINT.md + params → sprint-prompt.md
-- `scripts/dispatch.py` — tmux/headless session dispatch; optionally deploys careful hook when `AUTONOMOUS_WORKER_CAREFUL=1`
+- `scripts/dispatch.py` — tmux/headless session dispatch; resolves the worker CLI backend (`mode.backend`: claude|cursor) and delegates wrapper construction + careful-hook install to the matching `scripts/backends/<name>.py`
+- `scripts/backends/claude.py` — Claude Code backend (default). Builds `exec claude --dangerously-skip-permissions` + per-session `--settings <file>` for the careful hook.
+- `scripts/backends/cursor.py` — Cursor Agent backend. Builds `exec cursor agent -p --force --trust --output-format text` and writes `.cursor/hooks.json` (project-level — Cursor has no per-invocation `--settings` flag) when careful is enabled.
 - `scripts/hooks/careful.sh` — PreToolUse Bash hook; blocks catastrophic patterns (rm -rf /, mkfs, force-push to main, DROP TABLE, fork bombs)
+- `scripts/hooks/careful-cursor.sh` — Cursor adapter for careful.sh: re-shapes Cursor preToolUse / beforeShellExecution events into Claude-shaped Bash events, delegates to careful.sh, returns Cursor's `{permission:"allow|deny",...}` JSON.
 - `scripts/monitor-sprint.py` — Poll for sprint-summary.json
 - `scripts/monitor-worker.py` — Poll comms.json + tmux/process liveness
 - `scripts/evaluate-sprint.py` — Read summary JSON, update conductor state
@@ -43,7 +46,7 @@ Conductor (SKILL.md, user's CC session)
 - `scripts/timeline.py` — Append-only JSONL session event log at `.autonomous/timeline.jsonl` (session-start, sprint-start, sprint-end, phase-transition, session-end)
 - `scripts/explore-scan.py` — Project scanner: scores 8 exploration dimensions via heuristics
 - `scripts/backlog.py` — Cross-session persistent backlog (progressive disclosure, mkdir locking, max 50 items)
-- `scripts/user-config.py` — Global + project config (mode toggles, template, persona scope, experimental flags). Precedence: env > project > global > defaults. Drives first-time AskUserQuestion setup; persists to `~/.claude/autonomous/config.json` or `<project>/.autonomous/config.json`. Written configs reference `schemas/autonomous-config.schema.json` via `$schema` for IDE autocomplete.
+- `scripts/user-config.py` — Global + project config (mode toggles, template, persona scope, backend selector, experimental flags). Precedence: env > project > global > defaults. Drives first-time AskUserQuestion setup; persists to `~/.claude/autonomous/config.json` or `<project>/.autonomous/config.json`. Written configs reference `schemas/autonomous-config.schema.json` via `$schema` for IDE autocomplete. Knows `mode.backend` (claude|cursor) with `AUTONOMOUS_BACKEND` env override and `setup --backend` flag.
 - `schemas/autonomous-config.schema.json` — JSON Schema (draft-07) documenting the full config shape with per-field descriptions. IDEs use it for autocomplete + validation.
 - `scripts/checkpoint.py` — Human-readable markdown snapshots of session state at `.autonomous/checkpoints/<ts>-<slug>.md` (save/list/latest/show)
 - `scripts/persona.py` — OWNER.md auto-generation from git history + project docs
@@ -62,6 +65,7 @@ Conductor (SKILL.md, user's CC session)
 - `.claude/skills/diff-sessions/SKILL.md` — Compare two worker sessions side-by-side
 - `templates/gstack/rules.json` — gstack toolchain worker slash-command rules (allows + blocks)
 - `templates/default/rules.json` — Generic worker guidance with no toolchain assumptions
+- `templates/cursor/rules.json` — Worker guidance for sessions dispatched via Cursor (avoids gstack-only slash commands; uses backend-agnostic phrasing). Compose with `mode.templates=cursor` when running with `mode.backend=cursor`.
 - `scripts/build-sprint-prompt.py` — Composes the active `mode.templates` rules into SPRINT.md's allow/block markers
 - `explore-ralph-loop/SKILL.md` — Explore Ralph Loop: detects toolchain, captures execute-verify-fix patterns as reusable skills
 - `scripts/register-ralph-loops.sh` — Dynamic scanner: symlinks ralph-loop-skills/ to ~/.claude/skills/
@@ -164,7 +168,7 @@ To add a new template: create `templates/<name>/rules.json` with `allows` and
 
 ## Testing
 
-785 tests across 15 suites, all pure bash:
+827 tests across 16 suites, all pure bash:
 
 ```bash
 bash tests/test_conductor.sh    # 99 tests: state management, phase transitions, exploration, stale cleanup, input validation, CLI help
@@ -182,6 +186,7 @@ bash tests/test_worktree.sh     # 65 tests: per-sprint worktree CRUD, symlink es
 bash tests/test_user_config.sh  # 88 tests: config precedence, legacy migration, malformed config, experimental flags + warnings, init command, $schema reference, schema file integrity, mode.profile (default/dev enum + validation + force-worktrees rail + env override)
 bash tests/test_parallel_sprint.sh # 27 tests: V2 parallel orchestrator — gating, validation, E2E wave dispatch + serial merge + worktree teardown, max-parallel sources
 bash tests/test_dev_mode.sh     # 19 tests: modes/dev/prompt.md content + SKILL.md Startup addendum emission (dev vs default profile, env override, AUTONOMOUS_SKILL_DIR export)
+bash tests/test_cursor_backend.sh # 42 tests: backend resolution precedence, AUTONOMOUS_BACKEND env, invalid-name rejection, dispatch wrapper for both backends, cursor careful-hook installation (.cursor/hooks.json + no --settings invariant) + merge-with-existing-user-hooks + idempotency + malformed-recovery, unknown-backend fallback, careful-cursor.sh adapter event-shape matrix, cursor template render
 python3 -m compileall scripts   # quick syntax check
 ```
 
@@ -190,6 +195,8 @@ Test harness uses `tests/claude` (mock CC binary) controlled by env vars:
 - `MOCK_CLAUDE_COMMIT=1` — make a git commit during the mock run
 - `MOCK_CLAUDE_DELAY` — sleep N seconds (for timeout tests)
 - `MOCK_CLAUDE_EXIT` — exit code to return
+
+`tests/cursor` mirrors that contract for the Cursor backend (`MOCK_CURSOR_DELAY`, `MOCK_CURSOR_EXIT`, `MOCK_CURSOR_OUTPUT`).
 
 ## Development workflow
 

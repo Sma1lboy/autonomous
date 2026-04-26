@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Mock Cursor CLI binary for testing.
+# Drop tests/ into PATH before real cursor to intercept calls.
+#
+# Environment controls (parallel to tests/claude):
+#   MOCK_CURSOR_DELAY   Sleep N seconds before responding (timeout tests)
+#   MOCK_CURSOR_EXIT    Exit code to return (default: 0) — exits before output
+#   MOCK_CURSOR_OUTPUT  Text to print for `cursor agent -p`
+#
+# Cursor's CLI takes a subcommand: `cursor agent <args>`. We accept any
+# leading positional + flags and just emit a deterministic line so wrapper
+# tests can confirm the binary was reached.
+
+[ -n "${MOCK_CURSOR_DELAY:-}" ] && sleep "$MOCK_CURSOR_DELAY"
+
+if [ "${MOCK_CURSOR_EXIT:-0}" != "0" ]; then
+  exit "$MOCK_CURSOR_EXIT"
+fi
+
+# Support `cursor --version` / `cursor agent --version` minimally so any
+# `is_available`-style probe doesn't error.
+for arg in "$@"; do
+  case "$arg" in
+    --version|-v)
+      echo "cursor 0.0.0-mock"
+      exit 0
+      ;;
+  esac
+done
+
+# Default response — short, machine-greppable.
+echo "${MOCK_CURSOR_OUTPUT:-mock cursor agent OK}"

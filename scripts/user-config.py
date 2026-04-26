@@ -21,7 +21,7 @@ Commands:
                               to run the first-time AskUserQuestion flow.
   get <key> [project]       — print the effective value (with env overrides).
                               Example keys: mode.worktrees, mode.careful_hook,
-                              mode.templates, persona.scope.
+                              mode.templates, mode.backend, persona.scope.
                               `mode.template` (singular) still works as a
                               read-only alias returning the first entry of
                               `mode.templates`.
@@ -42,6 +42,7 @@ Commands:
 Values:
   mode.worktrees, mode.careful_hook  → bool (true|false)
   mode.templates                     → list[str] (e.g., ["gstack"], ["default","custom"])
+  mode.backend                       → string (claude|cursor)
   persona.scope                      → string (global|project)
 """
 from __future__ import annotations
@@ -68,6 +69,7 @@ ENV_OVERRIDES: dict[str, str] = {
     "mode.worktrees": "AUTONOMOUS_SPRINT_WORKTREES",
     "mode.careful_hook": "AUTONOMOUS_WORKER_CAREFUL",
     "mode.profile": "AUTONOMOUS_MODE_PROFILE",
+    "mode.backend": "AUTONOMOUS_BACKEND",
 }
 
 BOOL_KEYS = {
@@ -76,13 +78,17 @@ BOOL_KEYS = {
     "experimental.vira_worktree",
     "experimental.parallel_sprints",
 }
-STRING_KEYS = {"persona.scope", "mode.profile"}
+STRING_KEYS = {"persona.scope", "mode.profile", "mode.backend"}
 LIST_KEYS = {"mode.templates"}
 VALID_PERSONA_SCOPES = {"global", "project"}
 # Profile is a one-line switch that tells SKILL.md whether to inject the
 # dev-mode addendum. Extend cautiously — each new profile should have a
 # matching modes/<name>/prompt.md or it's a no-op.
 VALID_PROFILES = {"default", "dev"}
+# Backends correspond to scripts/backends/<name>.py modules. Extend by
+# adding a module that exposes cli_name/is_available/install_careful_hook/
+# build_command, then list the name here.
+VALID_BACKENDS = {"claude", "cursor"}
 
 # Experimental keys surface a stderr warning on every `check` so the user
 # never forgets they're running unstable code. Extend this set when adding
@@ -102,6 +108,9 @@ DEFAULTS: dict[str, Any] = {
         # Dev mode force-enables worktrees (see load_effective) so a broken
         # fix can't brick the live install.
         "profile": "default",
+        # Worker CLI to dispatch. "claude" is the historic default;
+        # "cursor" routes through `cursor agent -p` (see scripts/backends/).
+        "backend": "claude",
     },
     "persona": {
         "scope": "global",
@@ -333,6 +342,10 @@ def _coerce_value(key: str, raw: str) -> Any:
         if raw not in VALID_PROFILES:
             die(f"invalid profile: {raw} (use {'|'.join(sorted(VALID_PROFILES))})")
         return raw
+    if key == "mode.backend":
+        if raw not in VALID_BACKENDS:
+            die(f"invalid backend: {raw} (use {'|'.join(sorted(VALID_BACKENDS))})")
+        return raw
     if key in STRING_KEYS:
         return raw
     die(f"unknown key: {key}")
@@ -363,6 +376,11 @@ def cmd_get(args: argparse.Namespace) -> None:
         elif key == "mode.profile":
             if raw in VALID_PROFILES:
                 print(raw)
+                return
+            # Invalid env value — ignore, fall through to config
+        elif key == "mode.backend":
+            if raw.lower() in VALID_BACKENDS:
+                print(raw.lower())
                 return
             # Invalid env value — ignore, fall through to config
         elif key in STRING_KEYS:
@@ -454,6 +472,8 @@ def cmd_setup(args: argparse.Namespace) -> None:
         die(f"invalid --careful: {args.careful}")
     if args.profile and args.profile not in VALID_PROFILES:
         die(f"invalid --profile: {args.profile} (use {'|'.join(sorted(VALID_PROFILES))})")
+    if getattr(args, "backend", None) and args.backend not in VALID_BACKENDS:
+        die(f"invalid --backend: {args.backend} (use {'|'.join(sorted(VALID_BACKENDS))})")
 
     def mutate(cfg: dict[str, Any]) -> None:
         if worktrees is not None:
@@ -468,6 +488,8 @@ def cmd_setup(args: argparse.Namespace) -> None:
             _set_nested(cfg, "mode.templates", single)
         if args.profile:
             _set_nested(cfg, "mode.profile", args.profile)
+        if getattr(args, "backend", None):
+            _set_nested(cfg, "mode.backend", args.backend)
         if args.persona_scope:
             if args.persona_scope not in VALID_PERSONA_SCOPES:
                 die(f"invalid --persona-scope: {args.persona_scope}")
@@ -629,6 +651,13 @@ def build_parser() -> argparse.ArgumentParser:
         choices=sorted(VALID_PROFILES),
         help="conductor profile: 'default' or 'dev' "
         "(dev unlocks self-improvement flow + force-enables worktrees)",
+    )
+    p_setup.add_argument(
+        "--backend",
+        default=None,
+        choices=sorted(VALID_BACKENDS),
+        help="worker CLI backend: 'claude' (default) or 'cursor' "
+        "(routes dispatch through `cursor agent -p`)",
     )
     p_setup.set_defaults(func=cmd_setup)
 
