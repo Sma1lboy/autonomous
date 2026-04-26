@@ -138,7 +138,66 @@ assert_file_contains "$HOOKS" "beforeShellExecution" "hooks.json has beforeShell
 assert_file_contains "$HOOKS" "careful-cursor.sh" "hooks.json points at careful-cursor.sh adapter"
 # Cursor has no --settings flag — wrapper must not invent one
 assert_file_not_contains "$WRAPPER" "\-\-settings" "wrapper does not pass --settings to cursor"
+assert_file_contains "$HOOKS" "_autonomous_managed" "managed marker present on autonomous-owned entries"
 pkill -f "run-carefulwin.sh" 2>/dev/null || true
+
+# ── 7b. Existing user hooks.json survives merge ──────────────────────────
+
+echo ""
+echo "7b. cursor backend preserves user hooks"
+
+H=$(sandbox_home)
+T=$(make_project)
+mkdir -p "$T/.cursor"
+cat > "$T/.cursor/hooks.json" <<'JSON'
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {"command": "echo user-lint-hook"}
+    ],
+    "afterFileEdit": [
+      {"command": "echo user-format-hook"}
+    ]
+  }
+}
+JSON
+HOME="$H" python3 "$UC" set mode.backend cursor --scope global > /dev/null
+HOME="$H" python3 "$UC" set mode.careful_hook true --scope global > /dev/null
+echo "test prompt" > "$T/prompt.txt"
+HOME="$H" DISPATCH_MODE=headless python3 "$DISPATCH" "$T" "$T/prompt.txt" mergewin > /dev/null 2>&1 || true
+HOOKS="$T/.cursor/hooks.json"
+assert_file_exists "$HOOKS" "merged hooks.json exists"
+assert_file_contains "$HOOKS" "user-lint-hook" "user preToolUse entry preserved"
+assert_file_contains "$HOOKS" "user-format-hook" "user afterFileEdit entry preserved"
+assert_file_contains "$HOOKS" "_autonomous_managed" "autonomous managed entry added"
+assert_file_contains "$HOOKS" "careful-cursor.sh" "autonomous adapter wired into preToolUse"
+# Re-running must not duplicate our managed entry
+HOME="$H" DISPATCH_MODE=headless python3 "$DISPATCH" "$T" "$T/prompt.txt" mergewin2 > /dev/null 2>&1 || true
+COUNT=$(grep -c "_autonomous_managed" "$HOOKS" || true)
+if [ "$COUNT" -eq 2 ]; then
+  ok "managed entries idempotent (one per event, two events)"
+else
+  fail "expected 2 managed markers (preToolUse + beforeShellExecution); got $COUNT"
+fi
+pkill -f "run-mergewin" 2>/dev/null || true
+
+# ── 7c. Malformed hooks.json gets backed up, not propagated ──────────────
+
+echo ""
+echo "7c. cursor backend recovers from malformed hooks.json"
+
+H=$(sandbox_home)
+T=$(make_project)
+mkdir -p "$T/.cursor"
+echo '{not valid json' > "$T/.cursor/hooks.json"
+HOME="$H" python3 "$UC" set mode.backend cursor --scope global > /dev/null
+HOME="$H" python3 "$UC" set mode.careful_hook true --scope global > /dev/null
+echo "test prompt" > "$T/prompt.txt"
+HOME="$H" DISPATCH_MODE=headless python3 "$DISPATCH" "$T" "$T/prompt.txt" recoverwin > /dev/null 2>&1 || true
+assert_file_exists "$T/.cursor/hooks.json.bak" "malformed hooks.json backed up"
+assert_file_contains "$T/.cursor/hooks.json" "_autonomous_managed" "fresh hooks.json written after recovery"
+pkill -f "run-recoverwin.sh" 2>/dev/null || true
 
 # ── 8. Unknown backend falls back to claude with warning ────────────────
 

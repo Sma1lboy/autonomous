@@ -168,7 +168,7 @@ To add a new template: create `templates/<name>/rules.json` with `allows` and
 
 ## Testing
 
-818 tests across 16 suites, all pure bash:
+827 tests across 16 suites, all pure bash:
 
 ```bash
 bash tests/test_conductor.sh    # 99 tests: state management, phase transitions, exploration, stale cleanup, input validation, CLI help
@@ -186,7 +186,7 @@ bash tests/test_worktree.sh     # 65 tests: per-sprint worktree CRUD, symlink es
 bash tests/test_user_config.sh  # 88 tests: config precedence, legacy migration, malformed config, experimental flags + warnings, init command, $schema reference, schema file integrity, mode.profile (default/dev enum + validation + force-worktrees rail + env override)
 bash tests/test_parallel_sprint.sh # 27 tests: V2 parallel orchestrator — gating, validation, E2E wave dispatch + serial merge + worktree teardown, max-parallel sources
 bash tests/test_dev_mode.sh     # 19 tests: modes/dev/prompt.md content + SKILL.md Startup addendum emission (dev vs default profile, env override, AUTONOMOUS_SKILL_DIR export)
-bash tests/test_cursor_backend.sh # 33 tests: backend resolution precedence, AUTONOMOUS_BACKEND env, invalid-name rejection, dispatch wrapper for both backends, cursor careful-hook installation (.cursor/hooks.json + no --settings invariant), unknown-backend fallback, careful-cursor.sh adapter event-shape matrix, cursor template render
+bash tests/test_cursor_backend.sh # 42 tests: backend resolution precedence, AUTONOMOUS_BACKEND env, invalid-name rejection, dispatch wrapper for both backends, cursor careful-hook installation (.cursor/hooks.json + no --settings invariant) + merge-with-existing-user-hooks + idempotency + malformed-recovery, unknown-backend fallback, careful-cursor.sh adapter event-shape matrix, cursor template render
 python3 -m compileall scripts   # quick syntax check
 ```
 
