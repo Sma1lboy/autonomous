@@ -1,0 +1,14 @@
+{
+  "name": "cursor",
+  "description": "Worker guidance for sessions dispatched through the Cursor agent CLI. Avoids gstack/Claude-only slash commands (which Cursor sessions don't have) and falls back to direct, backend-agnostic phrasing.",
+  "allows": [
+    "New idea? -> \"Sketch the smallest version that proves the idea, then expand.\"",
+    "Need implementation? -> \"Build this end-to-end. Reference the design doc if one exists.\"",
+    "Feels fragile? -> \"Audit this module for fragility (error paths, race conditions, missing tests) and propose fixes.\"",
+    "Bug? -> \"Reproduce first, then root-cause before patching.\""
+  ],
+  "blocks": [
+    "Never invoke shell commands that ship code (git push to main, npm publish, vercel --prod, gh release create, gh pr merge).",
+    "Never run destructive shell commands (rm -rf /, mkfs, dd to raw devices, DROP TABLE)."
+  ]
+}

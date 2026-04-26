@@ -41,6 +41,12 @@
           "enum": ["default", "dev"],
           "default": "default",
           "description": "Conductor profile. 'default' runs the normal project-directed flow. 'dev' additionally injects modes/dev/prompt.md — giving the conductor permission to fix bugs in the autonomous-skill tool itself via an isolated worktree, bash+smoke-test verification gate, and a human-review PR. Dev profile force-enables mode.worktrees (safety rail: a broken fix cannot corrupt the live install). Env override: AUTONOMOUS_MODE_PROFILE."
+        },
+        "backend": {
+          "type": "string",
+          "enum": ["claude", "cursor"],
+          "default": "claude",
+          "description": "Worker CLI backend. 'claude' invokes `claude --dangerously-skip-permissions` (historic default). 'cursor' invokes `cursor agent -p --force --trust` and writes hooks to .cursor/hooks.json instead of using --settings (Cursor has no per-invocation settings flag). Env override: AUTONOMOUS_BACKEND."
         }
       }
     },

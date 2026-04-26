@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
-"""Launch claude sessions via tmux or headless background."""
+"""Launch worker sessions via tmux or headless background.
+
+Backend (Claude vs Cursor vs ...) is resolved from `mode.backend` in
+user-config (env > project > global, default "claude"). Each backend
+module under `scripts/backends/` knows how to assemble its CLI invocation
+and install its own careful-hook config.
+"""
 from __future__ import annotations
 
 import argparse
-import json
+import importlib
 import os
 import re
 import shlex
@@ -19,6 +25,8 @@ from pathlib import Path
 # alphanumerics, dot, dash, underscore; capped at 64 chars.
 _WINDOW_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
+KNOWN_BACKENDS = {"claude", "cursor"}
+
 
 def tmux_available() -> bool:
     return (
@@ -33,69 +41,70 @@ def tmux_available() -> bool:
     )
 
 
-def _careful_enabled(project_dir: Path) -> bool:
-    """Honor env var first (debug override), fall through to user-config."""
-    env_raw = os.environ.get("AUTONOMOUS_WORKER_CAREFUL", "")
-    if env_raw:
-        return env_raw.lower() in {"1", "true", "yes", "on"}
+def _user_config_get(project_dir: Path, key: str) -> str:
+    """Thin shell over user-config.py `get`. Returns "" on any failure so
+    callers can fall back to defaults without try/except plumbing."""
     config_script = Path(__file__).resolve().parent / "user-config.py"
     if not config_script.exists():
-        return False
+        return ""
     try:
         result = subprocess.run(
-            [sys.executable, str(config_script), "get",
-             "mode.careful_hook", str(project_dir)],
+            [sys.executable, str(config_script), "get", key, str(project_dir)],
             capture_output=True,
             text=True,
             check=False,
             timeout=5,
         )
     except (subprocess.TimeoutExpired, OSError):
-        return False
-    return result.stdout.strip() == "true"
+        return ""
+    return result.stdout.strip()
 
 
-def careful_settings_path(project_dir: Path, window: str) -> Path | None:
-    """Generate a per-session settings JSON registering the careful hook.
-    Returns the path when enabled (via user-config or env var), None otherwise."""
-    if not _careful_enabled(project_dir):
-        return None
-    hook_script = Path(__file__).resolve().parent / "hooks" / "careful.sh"
-    if not hook_script.exists():
-        return None
-    settings_path = project_dir / ".autonomous" / f"settings-{window}.json"
-    settings_path.parent.mkdir(exist_ok=True)
-    settings = {
-        "hooks": {
-            "PreToolUse": [
-                {
-                    "matcher": "Bash",
-                    "hooks": [
-                        {
-                            "type": "command",
-                            "command": f"bash {hook_script}",
-                        }
-                    ],
-                }
-            ]
-        }
-    }
-    settings_path.write_text(json.dumps(settings, indent=2))
-    return settings_path
+def _careful_enabled(project_dir: Path) -> bool:
+    """Honor env var first (debug override), fall through to user-config."""
+    env_raw = os.environ.get("AUTONOMOUS_WORKER_CAREFUL", "")
+    if env_raw:
+        return env_raw.lower() in {"1", "true", "yes", "on"}
+    return _user_config_get(project_dir, "mode.careful_hook") == "true"
 
 
-def create_wrapper(project_dir: Path, prompt_file: Path, window: str) -> Path:
+def resolve_backend(project_dir: Path):
+    """Pick the backend module (claude|cursor) for this dispatch.
+
+    Precedence: AUTONOMOUS_BACKEND env > project/global config > 'claude'.
+    Unknown names fall back to 'claude' with a stderr warning so a typo
+    doesn't silently change behavior."""
+    env_raw = os.environ.get("AUTONOMOUS_BACKEND", "").strip().lower()
+    name = env_raw or _user_config_get(project_dir, "mode.backend") or "claude"
+    if name not in KNOWN_BACKENDS:
+        print(
+            f"WARNING: unknown backend '{name}'; falling back to 'claude'. "
+            f"Valid backends: {sorted(KNOWN_BACKENDS)}",
+            file=sys.stderr,
+        )
+        name = "claude"
+    # Make `from backends import ...` work when dispatch.py is invoked
+    # directly via `python3 scripts/dispatch.py ...` without a package install.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    return importlib.import_module(f"backends.{name}")
+
+
+def create_wrapper(
+    project_dir: Path, prompt_file: Path, window: str, backend
+) -> Path:
     wrapper = project_dir / ".autonomous" / f"run-{window}.sh"
     wrapper.parent.mkdir(exist_ok=True)
-    settings_file = careful_settings_path(project_dir, window)
+    extra_args = ""
+    if _careful_enabled(project_dir):
+        extra_args = backend.install_careful_hook(project_dir, window)
+    cli_line = backend.build_command(extra_args)
     # shlex.quote() produces properly-escaped single-quoted literals so the
     # interpolated path can never break out of its argument context.
-    settings_arg = f" --settings {shlex.quote(str(settings_file))}" if settings_file else ""
     content = (
         "#!/bin/bash\n"
         f"cd {shlex.quote(str(project_dir))}\n"
         f"PROMPT=$(cat {shlex.quote(str(prompt_file))})\n"
-        f"exec claude --dangerously-skip-permissions{settings_arg} \"$PROMPT\"\n"
+        f"{cli_line}\n"
     )
     wrapper.write_text(content)
     wrapper.chmod(0o755)
@@ -103,7 +112,7 @@ def create_wrapper(project_dir: Path, prompt_file: Path, window: str) -> Path:
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Dispatch claude session")
+    parser = argparse.ArgumentParser(description="Dispatch worker session")
     parser.add_argument("project_dir")
     parser.add_argument("prompt_file")
     parser.add_argument("window_name")
@@ -123,7 +132,15 @@ def main(argv: list[str]) -> int:
         print(f"ERROR: Prompt file not found: {prompt}", file=sys.stderr)
         return 1
 
-    wrapper = create_wrapper(project, prompt, args.window_name)
+    backend = resolve_backend(project)
+    if not backend.is_available():
+        print(
+            f"WARNING: backend '{backend.cli_name()}' binary not found on PATH. "
+            "Wrapper will still be written but the dispatched session will fail.",
+            file=sys.stderr,
+        )
+
+    wrapper = create_wrapper(project, prompt, args.window_name, backend)
 
     env_mode = os.environ.get("DISPATCH_MODE", "").lower()
 

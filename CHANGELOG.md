@@ -4,6 +4,17 @@ All notable changes to autonomous-skill are documented here.
 
 ## [Unreleased]
 
+### Added
+- Pluggable worker CLI backend — autonomous workers can now be dispatched through either Claude Code (default) or Cursor Agent. Selected via `mode.backend` in user-config (env > project > global, default `claude`). Cursor backend invokes `cursor agent -p --force --trust` with hooks installed at `.cursor/hooks.json` (Cursor has no per-invocation `--settings` flag).
+- `scripts/backends/` — new package containing one module per CLI: `claude.py` (preserves the historic `--dangerously-skip-permissions` invocation + `--settings` careful-hook path) and `cursor.py` (Cursor-specific flags + hook config writer). Each module exposes `cli_name / is_available / install_careful_hook / build_command`.
+- `scripts/dispatch.py` refactored to resolve the backend from config and delegate wrapper construction. Falls back to `claude` with a stderr warning on unknown names so a typo can't silently change which CLI runs.
+- `scripts/hooks/careful-cursor.sh` — Cursor adapter that re-shapes Cursor's preToolUse / beforeShellExecution event into a Claude-shaped Bash event and forwards to the existing `careful.sh` matcher. Returns Cursor's `{permission:"allow|deny",...}` JSON. Probes seven JSON paths so Cursor schema variations don't bypass the guard.
+- `templates/cursor/rules.json` — backend-agnostic worker guidance for Cursor sessions (avoids gstack-only slash commands like `/office-hours`, `/qa`).
+- `schemas/autonomous-config.schema.json` — documents `mode.backend` enum `["claude","cursor"]` with default and env-override note.
+- `scripts/user-config.py` — `mode.backend` config key with `setup --backend` flag, `set` validation against `VALID_BACKENDS`, `AUTONOMOUS_BACKEND` env override, and `get` env-override branch.
+- `tests/test_cursor_backend.sh` (33 tests): backend resolution precedence, env override, invalid-name rejection, dispatch wrapper content for both backends, careful-hook installation under cursor backend (including the "no `--settings` flag" invariant), unknown-backend fallback, careful-cursor.sh adapter event-shape matrix, cursor template rendering.
+- `tests/cursor` — mock Cursor binary mirroring the `tests/claude` env-var contract for deterministic wrapper tests.
+
 
 ## [0.9.0] — 2026-04-23
 
