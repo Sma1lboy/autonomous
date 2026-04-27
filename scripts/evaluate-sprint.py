@@ -17,6 +17,28 @@ def tmux_kill(window: str) -> None:
     subprocess.run(["tmux", "kill-window", "-t", window], check=False)
 
 
+def cleanup_sprint_windows(project: Path, sprint_num: str) -> None:
+    """Kill the sprint master window plus every worker window dispatch.py
+    logged for this sprint, then drop the log file."""
+    targets = [f"sprint-{sprint_num}"]
+    log_path = project / ".autonomous" / f"sprint-{sprint_num}-windows.txt"
+    if log_path.exists():
+        try:
+            for line in log_path.read_text().splitlines():
+                name = line.strip()
+                if name and name not in targets:
+                    targets.append(name)
+        except OSError:
+            pass
+    for name in targets:
+        tmux_kill(name)
+    if log_path.exists():
+        try:
+            log_path.unlink()
+        except OSError:
+            pass
+
+
 def git_log(project: Path, limit: int = 5) -> list[str]:
     result = subprocess.run(
         ["git", "log", "--oneline", f"-{limit}"],
@@ -40,7 +62,7 @@ def main(argv: list[str]) -> int:
     script_dir = Path(args.script_dir).resolve()
     summary_path = project / ".autonomous" / f"sprint-{args.sprint_num}-summary.json"
 
-    tmux_kill(f"sprint-{args.sprint_num}")
+    cleanup_sprint_windows(project, args.sprint_num)
 
     if summary_path.exists():
         data = json.loads(summary_path.read_text())

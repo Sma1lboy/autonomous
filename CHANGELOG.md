@@ -4,6 +4,12 @@ All notable changes to autonomous-skill are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- Sprint window cleanup: `evaluate-sprint.py` now closes every tmux window opened during a sprint (sprint master plus any worker windows), not just `sprint-{N}`. `dispatch.py` records each window it opens in `.autonomous/sprint-{N}-windows.txt` (sprint number derived from `conductor-state.json`, best-effort and silent if state is missing); `evaluate-sprint.py` reads the log at sprint end, kills every entry, and removes the file. Prevents leftover worker windows when a worker exits unexpectedly or the sprint master ends before `monitor-worker.py` cleans up.
+
+### Added
+- `tests/test_window_cleanup.sh` (20 tests): dispatch.py logging (write, dedup, latest sprint, no-state no-op, empty-sprints no-op), evaluate-sprint.py cleanup (kills logged + master, missing log still kills master, blank-line tolerant), eval-output regression.
+
 
 ## [0.9.0] — 2026-04-23
 

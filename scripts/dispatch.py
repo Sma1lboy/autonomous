@@ -33,6 +33,34 @@ def tmux_available() -> bool:
     )
 
 
+def log_dispatched_window(project: Path, window: str) -> None:
+    """Append window to .autonomous/sprint-{N}-windows.txt for evaluate-sprint
+    to clean up. N is read from conductor-state.json; best-effort, never raises."""
+    state_file = project / ".autonomous" / "conductor-state.json"
+    if not state_file.exists():
+        return
+    try:
+        state = json.loads(state_file.read_text())
+    except (OSError, json.JSONDecodeError):
+        return
+    sprints = state.get("sprints") or []
+    if not sprints:
+        return
+    sprint_num = sprints[-1].get("number")
+    if sprint_num is None:
+        return
+    log_path = project / ".autonomous" / f"sprint-{sprint_num}-windows.txt"
+    try:
+        log_path.parent.mkdir(exist_ok=True)
+        existing = log_path.read_text().splitlines() if log_path.exists() else []
+        if window in existing:
+            return
+        with log_path.open("a") as f:
+            f.write(window + "\n")
+    except OSError:
+        return
+
+
 def _careful_enabled(project_dir: Path) -> bool:
     """Honor env var first (debug override), fall through to user-config."""
     env_raw = os.environ.get("AUTONOMOUS_WORKER_CAREFUL", "")
@@ -137,6 +165,7 @@ def main(argv: list[str]) -> int:
             ["tmux", "new-window", "-n", args.window_name, f"bash {wrapper}"],
             check=False,
         )
+        log_dispatched_window(project, args.window_name)
         print("DISPATCH_MODE=tmux")
         print(f"Launched in tmux window '{args.window_name}'")
     else:
