@@ -30,11 +30,11 @@ Conductor (SKILL.md, user's CC session)
 - `scripts/parse-args.py` — Parse ARGS → _MAX_SPRINTS + _DIRECTION
 - `scripts/session-init.py` — Create session branch, init conductor state + backlog
 - `scripts/build-sprint-prompt.py` — Inline SPRINT.md + params → sprint-prompt.md
-- `scripts/dispatch.py` — tmux/headless session dispatch; optionally deploys careful hook when `AUTONOMOUS_WORKER_CAREFUL=1`
+- `scripts/dispatch.py` — tmux/headless session dispatch; optionally deploys careful hook when `AUTONOMOUS_WORKER_CAREFUL=1`. In tmux mode, appends each window name to `.autonomous/sprint-{N}-windows.txt` (sprint number read from conductor-state) so `evaluate-sprint.py` can close every sprint-spawned window, not just the master
 - `scripts/hooks/careful.sh` — PreToolUse Bash hook; blocks catastrophic patterns (rm -rf /, mkfs, force-push to main, DROP TABLE, fork bombs)
 - `scripts/monitor-sprint.py` — Poll for sprint-summary.json
 - `scripts/monitor-worker.py` — Poll comms.json + tmux/process liveness
-- `scripts/evaluate-sprint.py` — Read summary JSON, update conductor state
+- `scripts/evaluate-sprint.py` — Read summary JSON, update conductor state, and tear down every tmux window the sprint opened (sprint master + log entries from `sprint-{N}-windows.txt`)
 - `scripts/merge-sprint.py` — Merge or discard sprint branch
 - `scripts/worktree.py` — Per-sprint git worktree manager (opt-in via `AUTONOMOUS_SPRINT_WORKTREES=1`): creates `.worktrees/sprint-N/` with symlinked `.autonomous/`, removes on success
 - `scripts/parallel-sprint.py` — **Experimental V2.** K-parallel sprint orchestrator gated by `experimental.parallel_sprints=true` + `mode.worktrees=true`. Dispatches K workers concurrently, waits for all, merges serially (first conflict aborts the wave, preserves remaining worktrees for inspection). Max parallel capped by `experimental.max_parallel_sprints` (default 3). Not wired into SKILL.md yet — invoke manually via `parallel-sprint.py run`.
@@ -164,7 +164,7 @@ To add a new template: create `templates/<name>/rules.json` with `allows` and
 
 ## Testing
 
-785 tests across 15 suites, all pure bash:
+805 tests across 16 suites, all pure bash:
 
 ```bash
 bash tests/test_conductor.sh    # 99 tests: state management, phase transitions, exploration, stale cleanup, input validation, CLI help
@@ -182,6 +182,7 @@ bash tests/test_worktree.sh     # 65 tests: per-sprint worktree CRUD, symlink es
 bash tests/test_user_config.sh  # 88 tests: config precedence, legacy migration, malformed config, experimental flags + warnings, init command, $schema reference, schema file integrity, mode.profile (default/dev enum + validation + force-worktrees rail + env override)
 bash tests/test_parallel_sprint.sh # 27 tests: V2 parallel orchestrator — gating, validation, E2E wave dispatch + serial merge + worktree teardown, max-parallel sources
 bash tests/test_dev_mode.sh     # 19 tests: modes/dev/prompt.md content + SKILL.md Startup addendum emission (dev vs default profile, env override, AUTONOMOUS_SKILL_DIR export)
+bash tests/test_window_cleanup.sh # 20 tests: dispatch.py per-sprint window log (write/dedup/latest-sprint/missing-state/empty-sprints), evaluate-sprint.py kills logged windows + master + unlinks the log, blank-line tolerance, eval-output regression
 python3 -m compileall scripts   # quick syntax check
 ```
 
