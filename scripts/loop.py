@@ -74,10 +74,6 @@ def main(argv: list[str]) -> int:
         "claude",
         "claude CLI not found in PATH\n  Install Claude Code: https://docs.anthropic.com/en/docs/claude-code",
     )
-    require(
-        "timeout",
-        "timeout command not found in PATH\n  On macOS: brew install coreutils",
-    )
     skill_md = skill_dir / "SKILL.md"
     if not skill_md.exists():
         print(
@@ -107,8 +103,6 @@ def main(argv: list[str]) -> int:
     print("═══════════════════════════════════════════════════")
 
     cmd = [
-        "timeout",
-        str(timeout),
         "claude",
         "-p",
         prompt,
@@ -119,7 +113,17 @@ def main(argv: list[str]) -> int:
     ]
     if owner_prompt:
         cmd.extend(["--append-system-prompt", owner_prompt])
-    subprocess.run(cmd, check=False)
+    # `subprocess.run(timeout=N)` portably terminates the child after N seconds
+    # on every supported OS, replacing the external GNU `timeout(1)` command
+    # which is missing on default macOS and is a Windows shell built-in with
+    # incompatible semantics.
+    try:
+        subprocess.run(cmd, check=False, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        print(
+            f"claude session exceeded CC_TIMEOUT={timeout}s — terminated.",
+            file=sys.stderr,
+        )
     return 0
 
 
