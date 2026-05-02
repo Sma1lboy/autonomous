@@ -4,6 +4,13 @@ All notable changes to autonomous-skill are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **Windows compatibility for sprint dispatch.** `scripts/dispatch.py` now writes POSIX paths into the generated bash wrapper and passes POSIX paths to `bash`/`tmux`/`subprocess`, fixing a hard-fail on Windows where `str(Path)` produced backslash-separated paths that bash interpreted as escape sequences (e.g. `E:\Projects\harness-lab\.autonomous\run-sprint-1.sh` collapsed to `E:Projectsharness-labautonomousrun-sprint-1.sh`, "No such file or directory"). Changes are zero-diff on Linux/macOS — `Path.as_posix()` is a no-op when the path separator is already `/`. Wrapper-content rendering is split into a pure `render_wrapper_content()` helper for unit testing.
+- **Cross-platform timeout in `scripts/loop.py`.** Replaces the external GNU `timeout(1)` command with `subprocess.run(timeout=...)`. On Linux behavior is identical (SIGKILL after N seconds); on macOS users no longer need to `brew install coreutils`; on Windows it works for the first time (Windows' built-in `timeout.exe` is an interactive `press any key to continue` prompt with incompatible semantics).
+
+### Added
+- `tests/test_dispatch_paths.sh` (9 tests): unit tests for `render_wrapper_content` covering POSIX inputs, `PureWindowsPath` inputs (simulates Windows on any host), settings-path injection, end-to-end `create_wrapper` write, and source-level guards against future `str(Path)` regressions in the bash-bound spots.
+
 
 ## [0.9.0] — 2026-04-23
 

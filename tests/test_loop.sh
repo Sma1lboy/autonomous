@@ -15,15 +15,12 @@ LOOP="$SCRIPT_DIR/../scripts/loop.py"
 
 # ── Mock helpers (loop.py specific) ────────────────────────────────────────
 
-# Create a mock dir with timeout shim pre-installed. Returns mock dir path.
+# Create a mock dir for PATH overrides.  Previously this also installed a
+# `timeout` shim because loop.py shelled out to GNU timeout(1); loop.py now
+# uses subprocess.run(timeout=...) instead, so the external command is gone
+# and no shim is required.
 new_mock_dir() {
-  local d; d=$(new_tmp)
-  cat > "$d/timeout" << 'TEOF'
-#!/usr/bin/env bash
-shift; exec "$@"
-TEOF
-  chmod +x "$d/timeout"
-  echo "$d"
+  new_tmp
 }
 
 # Write a basic mock claude that drains stdin and exits 0.

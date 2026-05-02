@@ -65,6 +65,8 @@ def careful_settings_path(project_dir: Path, window: str) -> Path | None:
         return None
     settings_path = project_dir / ".autonomous" / f"settings-{window}.json"
     settings_path.parent.mkdir(exist_ok=True)
+    # `as_posix()` keeps the path forward-slashed even on Windows so bash
+    # (Git Bash / WSL) can resolve it without backslash-escape mishaps.
     settings = {
         "hooks": {
             "PreToolUse": [
@@ -73,7 +75,7 @@ def careful_settings_path(project_dir: Path, window: str) -> Path | None:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": f"bash {hook_script}",
+                            "command": f"bash {shlex.quote(hook_script.as_posix())}",
                         }
                     ],
                 }
@@ -84,18 +86,34 @@ def careful_settings_path(project_dir: Path, window: str) -> Path | None:
     return settings_path
 
 
+def render_wrapper_content(
+    project_path: str, prompt_path: str, settings_path: str | None
+) -> str:
+    """Render the bash wrapper script body. Inputs must already be in the form
+    bash expects — POSIX forward slashes. Pure function for testability."""
+    settings_arg = (
+        f" --settings {shlex.quote(settings_path)}" if settings_path else ""
+    )
+    return (
+        "#!/bin/bash\n"
+        f"cd {shlex.quote(project_path)}\n"
+        f"PROMPT=$(cat {shlex.quote(prompt_path)})\n"
+        f"exec claude --dangerously-skip-permissions{settings_arg} \"$PROMPT\"\n"
+    )
+
+
 def create_wrapper(project_dir: Path, prompt_file: Path, window: str) -> Path:
     wrapper = project_dir / ".autonomous" / f"run-{window}.sh"
     wrapper.parent.mkdir(exist_ok=True)
     settings_file = careful_settings_path(project_dir, window)
-    # shlex.quote() produces properly-escaped single-quoted literals so the
-    # interpolated path can never break out of its argument context.
-    settings_arg = f" --settings {shlex.quote(str(settings_file))}" if settings_file else ""
-    content = (
-        "#!/bin/bash\n"
-        f"cd {shlex.quote(str(project_dir))}\n"
-        f"PROMPT=$(cat {shlex.quote(str(prompt_file))})\n"
-        f"exec claude --dangerously-skip-permissions{settings_arg} \"$PROMPT\"\n"
+    # Convert paths to POSIX form (forward slashes) before injecting into the
+    # bash wrapper. On Windows, `str(Path)` returns backslashes which bash
+    # interprets as escape sequences (see issue: paths like `E:\Projects\foo`
+    # silently collapse to `EProjectsfoo`). `as_posix()` is a no-op on Linux.
+    content = render_wrapper_content(
+        project_dir.as_posix(),
+        prompt_file.as_posix(),
+        settings_file.as_posix() if settings_file else None,
     )
     wrapper.write_text(content)
     wrapper.chmod(0o755)
@@ -127,14 +145,23 @@ def main(argv: list[str]) -> int:
 
     env_mode = os.environ.get("DISPATCH_MODE", "").lower()
 
+    # Always pass POSIX paths to bash — see the comment in create_wrapper.
+    wrapper_arg = wrapper.as_posix()
+
     if env_mode == "blocking":
         print("DISPATCH_MODE=blocking")
         print(f"Running '{args.window_name}' (blocking)...")
-        result = subprocess.run(["bash", str(wrapper)], check=False)
+        result = subprocess.run(["bash", wrapper_arg], check=False)
         print(f"Finished with exit code {result.returncode}")
     elif tmux_available() and env_mode != "headless":
         subprocess.run(
-            ["tmux", "new-window", "-n", args.window_name, f"bash {wrapper}"],
+            [
+                "tmux",
+                "new-window",
+                "-n",
+                args.window_name,
+                f"bash {shlex.quote(wrapper_arg)}",
+            ],
             check=False,
         )
         print("DISPATCH_MODE=tmux")
@@ -143,7 +170,7 @@ def main(argv: list[str]) -> int:
         log_file = project / ".autonomous" / f"{args.window_name}-output.log"
         log_file.parent.mkdir(exist_ok=True)
         with open(log_file, "w") as log:
-            proc = subprocess.Popen(["bash", str(wrapper)], stdout=log, stderr=log)
+            proc = subprocess.Popen(["bash", wrapper_arg], stdout=log, stderr=log)
         print("DISPATCH_MODE=headless")
         print(f"DISPATCH_PID={proc.pid}")
         print(f"PID: {proc.pid}")
