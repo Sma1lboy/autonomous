@@ -143,4 +143,49 @@ assert_file_contains "$DISPATCH" 'project_dir.as_posix()' \
 assert_file_contains "$DISPATCH" 'prompt_file.as_posix()' \
   "create_wrapper uses prompt_file.as_posix()"
 
+# ── 6. CRLF guard: wrapper file must not contain \r ────────────────────────
+echo ""
+echo "6. Wrapper file is written with LF endings (no \\r)"
+
+T=$(new_tmp)
+mkdir -p "$T/.autonomous"
+echo "x" > "$T/.autonomous/p.md"
+SCRIPTS_DIR="$SCRIPTS_DIR" PROJ="$T" python3 - <<'PYEOF'
+import importlib.util, os
+from pathlib import Path
+spec = importlib.util.spec_from_file_location(
+    "dispatch", os.path.join(os.environ["SCRIPTS_DIR"], "dispatch.py")
+)
+dispatch = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(dispatch)
+proj = Path(os.environ["PROJ"]).resolve()
+wrapper = dispatch.create_wrapper(proj, proj / ".autonomous" / "p.md", "crlf")
+data = wrapper.read_bytes()
+assert b"\r" not in data, f"CR byte present: {data!r}"
+PYEOF
+assert_eq "$?" "0" "create_wrapper writes LF-only bytes (no CR even on Windows)"
+
+assert_file_contains "$DISPATCH" 'write_bytes' \
+  "create_wrapper uses write_bytes (avoids universal newline translation)"
+assert_file_not_contains "$DISPATCH" 'wrapper.write_text(content)' \
+  "no plain wrapper.write_text(content) — must be write_bytes for newline safety"
+
+# ── 7. Bash binary resolution: avoid Windows System32 WSL launcher ─────────
+echo ""
+echo "7. dispatch resolves bash via shutil.which (not raw \"bash\")"
+
+assert_file_contains "$DISPATCH" 'shutil.which("bash")' \
+  "dispatch resolves bash via shutil.which to skip Windows System32\\bash.exe (WSL)"
+assert_file_not_contains "$DISPATCH" '"bash", wrapper_name' \
+  "no [\"bash\", wrapper_name] — must use the resolved bash_path"
+
+# ── 8. cwd-based subprocess invocation ─────────────────────────────────────
+echo ""
+echo "8. dispatch invokes bash with cwd=parent + relative wrapper name"
+
+assert_file_contains "$DISPATCH" 'cwd=wrapper_cwd' \
+  "subprocess calls pass cwd=wrapper_cwd"
+assert_file_contains "$DISPATCH" 'wrapper_name = wrapper.name' \
+  "wrapper_name is the basename, not the full path"
+
 print_results

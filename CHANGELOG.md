@@ -5,11 +5,16 @@ All notable changes to autonomous-skill are documented here.
 ## [Unreleased]
 
 ### Fixed
-- **Windows compatibility for sprint dispatch.** `scripts/dispatch.py` now writes POSIX paths into the generated bash wrapper and passes POSIX paths to `bash`/`tmux`/`subprocess`, fixing a hard-fail on Windows where `str(Path)` produced backslash-separated paths that bash interpreted as escape sequences (e.g. `E:\Projects\harness-lab\.autonomous\run-sprint-1.sh` collapsed to `E:Projectsharness-labautonomousrun-sprint-1.sh`, "No such file or directory"). Changes are zero-diff on Linux/macOS — `Path.as_posix()` is a no-op when the path separator is already `/`. Wrapper-content rendering is split into a pure `render_wrapper_content()` helper for unit testing.
+- **Windows compatibility for sprint dispatch.** Four separate Windows incompats in `scripts/dispatch.py` that together prevented the autonomous loop from running on a Git Bash / MSYS2 host:
+  - **Path separator**: wrapper script content used `str(Path)` which is backslash-separated on Windows. Bash interpreted `E:\Projects\harness-lab\.autonomous\run-sprint-1.sh` as escape sequences and collapsed it to `E:Projectsharness-labautonomousrun-sprint-1.sh` ("No such file or directory"). All bash-bound paths now route through `Path.as_posix()` (no-op on Linux/macOS).
+  - **Universal newline translation**: `Path.write_text(content)` on Windows translates `\n` to `\r\n`, leaving a trailing `\r` after each path so `cd "E:/Projects/foo"` became `cd $'E:/Projects/foo\r'`. Switched to `write_bytes(content.encode("utf-8"))` to bypass the translation.
+  - **WSL bash hijack**: Python's `subprocess.run(["bash", ...])` on Windows uses CreateProcess, which follows the Windows binary search order (System32 first) and silently picks up `C:\Windows\System32\bash.exe` — the WSL launcher — instead of Git Bash. WSL bash interprets `E:/foo` as a Linux path and fails. Now resolves bash via `shutil.which("bash")` first (which honors PATH order, so Git Bash wins).
+  - **MSYS2 argv path translation gap**: passing `bash E:/foo/x.sh` from Python's subprocess fails even when the same invocation works from interactive bash. Switched to `cwd=<parent>` + relative wrapper basename, which sidesteps argv translation entirely.
+  Wrapper content rendering is split into a pure `render_wrapper_content()` helper for unit testing.
 - **Cross-platform timeout in `scripts/loop.py`.** Replaces the external GNU `timeout(1)` command with `subprocess.run(timeout=...)`. On Linux behavior is identical (SIGKILL after N seconds); on macOS users no longer need to `brew install coreutils`; on Windows it works for the first time (Windows' built-in `timeout.exe` is an interactive `press any key to continue` prompt with incompatible semantics).
 
 ### Added
-- `tests/test_dispatch_paths.sh` (9 tests): unit tests for `render_wrapper_content` covering POSIX inputs, `PureWindowsPath` inputs (simulates Windows on any host), settings-path injection, end-to-end `create_wrapper` write, and source-level guards against future `str(Path)` regressions in the bash-bound spots.
+- `tests/test_dispatch_paths.sh` (15 tests): unit tests for `render_wrapper_content` covering POSIX inputs, `PureWindowsPath` inputs (simulates Windows on any host), settings-path injection, end-to-end `create_wrapper` write, CRLF avoidance, bash-binary resolution via `shutil.which`, `cwd=`-based subprocess invocation, and source-level guards against future regressions.
 
 
 ## [0.9.0] — 2026-04-23

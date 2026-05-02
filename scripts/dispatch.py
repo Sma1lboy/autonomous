@@ -115,7 +115,12 @@ def create_wrapper(project_dir: Path, prompt_file: Path, window: str) -> Path:
         prompt_file.as_posix(),
         settings_file.as_posix() if settings_file else None,
     )
-    wrapper.write_text(content)
+    # Force LF line endings.  Path.write_text() applies universal newline
+    # translation on Windows (LF -> CRLF), which leaves a trailing \r in each
+    # path, so `cd "E:/Projects/foo"` becomes `cd $'E:/Projects/foo\r'` and
+    # bash looks for a directory whose name literally ends with carriage
+    # return.  write_bytes bypasses the translation cleanly.
+    wrapper.write_bytes(content.encode("utf-8"))
     wrapper.chmod(0o755)
     return wrapper
 
@@ -145,13 +150,34 @@ def main(argv: list[str]) -> int:
 
     env_mode = os.environ.get("DISPATCH_MODE", "").lower()
 
-    # Always pass POSIX paths to bash — see the comment in create_wrapper.
-    wrapper_arg = wrapper.as_posix()
+    # Resolve `bash` to a concrete path before invoking subprocess.  On
+    # Windows, `subprocess.run(["bash", ...])` uses CreateProcess which
+    # follows the Windows binary search order (system32 first), so it picks
+    # up `C:\Windows\System32\bash.exe` — the WSL launcher — before the
+    # Git Bash / MSYS2 bash that the rest of the toolchain expects.  WSL
+    # bash interprets `E:/foo` as a Linux path under the current root and
+    # fails with "No such file or directory".  `shutil.which("bash")` walks
+    # PATH in order so it returns Git Bash on a normally-configured Windows
+    # install and is a no-op on Linux/macOS (returns /usr/bin/bash etc.).
+    bash_path = shutil.which("bash") or "bash"
+
+    # Invoke bash with `cwd=<parent>` and the wrapper's basename rather than
+    # an absolute path.  Python's subprocess on Windows bypasses MSYS2's
+    # argv path-translation, so passing `bash E:/foo/x.sh` or `bash /e/foo/
+    # x.sh` from Python fails even though the same invocation works in an
+    # interactive bash shell.  Setting cwd via SetCurrentDirectoryW + a
+    # relative script name sidesteps that gap and is identical to the
+    # absolute-path form on Linux/macOS.  `wrapper.as_posix()` is still
+    # used for the tmux command string (where the path crosses a shell).
+    wrapper_name = wrapper.name
+    wrapper_cwd = str(wrapper.parent)
 
     if env_mode == "blocking":
         print("DISPATCH_MODE=blocking")
         print(f"Running '{args.window_name}' (blocking)...")
-        result = subprocess.run(["bash", wrapper_arg], check=False)
+        result = subprocess.run(
+            [bash_path, wrapper_name], cwd=wrapper_cwd, check=False
+        )
         print(f"Finished with exit code {result.returncode}")
     elif tmux_available() and env_mode != "headless":
         subprocess.run(
@@ -160,7 +186,7 @@ def main(argv: list[str]) -> int:
                 "new-window",
                 "-n",
                 args.window_name,
-                f"bash {shlex.quote(wrapper_arg)}",
+                f"bash {shlex.quote(wrapper.as_posix())}",
             ],
             check=False,
         )
@@ -170,7 +196,9 @@ def main(argv: list[str]) -> int:
         log_file = project / ".autonomous" / f"{args.window_name}-output.log"
         log_file.parent.mkdir(exist_ok=True)
         with open(log_file, "w") as log:
-            proc = subprocess.Popen(["bash", wrapper_arg], stdout=log, stderr=log)
+            proc = subprocess.Popen(
+                [bash_path, wrapper_name], cwd=wrapper_cwd, stdout=log, stderr=log
+            )
         print("DISPATCH_MODE=headless")
         print(f"DISPATCH_PID={proc.pid}")
         print(f"PID: {proc.pid}")
