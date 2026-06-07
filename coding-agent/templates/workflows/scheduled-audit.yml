@@ -1,0 +1,29 @@
+name: Scheduled autonomous audit
+
+# Creates a weekly audit issue assigned to Copilot. The bot reads AGENTS.md
+# and opens a draft PR with the 8-dimension improvement workflow.
+#
+# Copy to .github/workflows/scheduled-audit.yml in your repo to enable.
+
+on:
+  schedule:
+    - cron: '0 2 * * 0'  # 02:00 UTC every Sunday
+  workflow_dispatch: {}
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  create-audit-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create audit issue assigned to Copilot
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "Weekly autonomous improvement audit" \
+            --body "Run the autonomous improvement workflow per \`AGENTS.md\`. Run multiple fix passes until every dimension scores ≥ 9 AND two consecutive rescans find no new gaps. Scoreboard goes in the PR description. Mark ready for review only when the bar is met." \
+            --assignee Copilot
